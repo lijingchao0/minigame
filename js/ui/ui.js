@@ -1,10 +1,13 @@
 /**
  * UI 绘制 — HUD / 对话 / 背包 / 任务日志 / 标题 / 特效
  */
-const { COLORS, drawPanel, drawButton, drawText, drawBar, roundRect, hitTest, wrapText } = require('../pix.js');
+const { COLORS, drawPanel, drawButton, drawText, drawBar, roundRect, hitTest, wrapText, dist } = require('../pix.js');
 const { drawItemIcon, ITEM_DEFS } = require('../entities/item.js');
 const { SKILLS } = require('../systems/cultivation.js');
 const { SHOP_STOCK } = require('../systems/economy.js');
+
+/** 全局 HUD 缩放（右下菜单约缩小 35%，左上同步紧凑） */
+const HUD_SCALE = 0.68;
 
 function createUI(screen) {
   const ui = {
@@ -20,7 +23,8 @@ function createUI(screen) {
     rootPick: 0,
     breakFx: null, // {text, t}
     menuButtons: [],
-    hotbarHint: true
+    hotbarHint: true,
+    hotbarAlpha: 0
   };
 
   function toast(msg) {
@@ -85,7 +89,7 @@ function createUI(screen) {
     drawText(ctx, '蚂蚁修仙', w / 2, h * 0.52, {
       align: 'center', font: 'bold 42px "PingFang SC","KaiTi",serif', color: '#f5e6c8', shadow: true
     });
-    drawText(ctx, 'v2.1 · 灵智初开', w / 2, h * 0.52 + 48, {
+    drawText(ctx, 'v2.2 · 灵智初开', w / 2, h * 0.52 + 48, {
       align: 'center', font: '14px "PingFang SC",sans-serif', color: COLORS.gold
     });
 
@@ -124,92 +128,76 @@ function createUI(screen) {
     const h = screen.designH;
     const p = game.player;
     const cul = game.cultivation;
+    const S = HUD_SCALE;
 
-    // 左上状态
-    drawPanel(ctx, 8, 8, 150, 78, { radius: 8 });
-    // 头像
-    ctx.fillStyle = '#3d2814';
+    // 左上状态（紧凑）
+    const lpW = Math.round(118 * S / 0.68);
+    const lpH = Math.round(58 * S / 0.68);
+    drawPanel(ctx, 6, 6, lpW, lpH, { radius: 6 });
+    ctx.fillStyle = '#4a3420';
     ctx.beginPath();
-    ctx.arc(28, 36, 14, 0, Math.PI * 2);
+    ctx.arc(20, 28, 10, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#d4a017';
+    ctx.fillStyle = '#e8bc3a';
     ctx.beginPath();
-    ctx.arc(28, 30, 5, 0, Math.PI * 2);
+    ctx.arc(20, 24, 4, 0, Math.PI * 2);
     ctx.fill();
 
-    drawText(ctx, cul.realmName(), 48, 14, { font: 'bold 11px sans-serif', color: COLORS.gold });
-    drawText(ctx, cul.rootsLabel(), 48, 28, { font: '9px sans-serif', color: COLORS.textDim });
-    drawBar(ctx, 48, 44, 100, 8, p.hp / p.maxHp, COLORS.hp);
-    drawBar(ctx, 48, 56, 100, 8, p.mp / p.maxMp, COLORS.mp);
-    drawBar(ctx, 48, 68, 100, 6, cul.state.xp / cul.xpNeeded(), COLORS.xp);
+    drawText(ctx, cul.realmName(), 34, 8, { font: 'bold 10px sans-serif', color: COLORS.gold });
+    drawText(ctx, cul.rootsLabel(), 34, 20, { font: '8px sans-serif', color: COLORS.textDim });
+    drawBar(ctx, 34, 34, lpW - 42, 6, p.hp / p.maxHp, COLORS.hp);
+    drawBar(ctx, 34, 42, lpW - 42, 6, p.mp / p.maxMp, COLORS.mp);
+    drawBar(ctx, 34, 50, lpW - 42, 5, cul.state.xp / cul.xpNeeded(), COLORS.xp);
+    ui._hudLeft = { x: 6, y: 6, w: lpW, h: lpH };
 
-    // 右上资源 + 时间
-    drawPanel(ctx, w - 118, 8, 110, 52, { radius: 8 });
-    drawText(ctx, '金 ' + game.inventory.state.gold, w - 108, 14, { font: '11px sans-serif' });
-    drawText(ctx, game.daycycle.timeLabel(), w - 108, 30, { font: '10px sans-serif', color: COLORS.textDim });
-    drawText(ctx, '繁 ' + game.kingdom.state.prosperity, w - 108, 44, { font: '10px sans-serif', color: '#e67e22' });
+    // 右上资源 + 时间 + 倍速
+    const rpX = w - 108;
+    drawPanel(ctx, rpX, 6, 102, 44, { radius: 6 });
+    drawText(ctx, '金 ' + game.inventory.state.gold, rpX + 8, 10, { font: '10px sans-serif' });
+    drawText(ctx, game.daycycle.timeLabel(), rpX + 8, 24, { font: '9px sans-serif', color: COLORS.textDim });
+    drawText(ctx, '繁 ' + game.kingdom.state.prosperity, rpX + 8, 36, { font: '9px sans-serif', color: '#e67e22' });
 
-    // 小地图
-    drawMinimap(ctx, game, w - 118, 66, 110, 80);
+    // 倍速按钮
+    const spLabel = game.daycycle.speedLabel();
+    drawButton(ctx, rpX - 40, 6, 36, 28, spLabel, { font: 'bold 11px sans-serif' });
+    ui._speedBtn = { x: rpX - 40, y: 6, w: 36, h: 28 };
+    ui._hudRight = { x: rpX - 40, y: 6, w: 142, h: 44 };
 
-    // 任务追踪
-    const track = game.quests.trackingInfo(game);
-    if (track) {
-      drawPanel(ctx, 8, 94, 168, 48, { radius: 6 });
-      drawText(ctx, track.name, 14, 100, { font: 'bold 11px sans-serif', color: COLORS.gold });
-      drawText(ctx, track.stepText, 14, 116, { font: '10px sans-serif', color: COLORS.text });
-    }
+    // 小地图（略缩小）
+    drawMinimap(ctx, game, w - 100, 56, 94, 68);
 
-    // 底部快捷栏
-    const barY = h - 58;
-    const skills = cul.state.learned;
-    const slotW = 44;
-    const slots = Math.min(3, Math.max(skills.length, 3));
-    const barW = slotW * 4 + 20;
-    const barX = (w - barW) / 2;
-    drawPanel(ctx, barX, barY, barW, 50, { radius: 8 });
+    // 任务简讯（顶部居中偏左）
+    drawQuestBrief(ctx, game, w);
 
-    ui._hotbtns = [];
-    // 攻击键
-    const ax = barX + 8;
-    drawButton(ctx, ax, barY + 8, slotW - 4, 34, '攻');
-    ui._hotbtns.push({ id: 'attack', x: ax, y: barY + 8, w: slotW - 4, h: 34 });
+    // 任务方向指引
+    drawQuestGuide(ctx, game, w, h);
 
-    for (let i = 0; i < 3; i++) {
-      const sx = barX + 8 + (i + 1) * slotW;
-      const sk = SKILLS.find((s) => s.id === skills[i]);
-      const label = sk ? sk.name.slice(0, 2) : '—';
-      const cd = sk ? (cul.state.skillCd[sk.id] || 0) : 0;
-      drawButton(ctx, sx, barY + 8, slotW - 4, 34, label, { disabled: !sk });
-      if (cd > 0) {
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        roundRect(ctx, sx, barY + 8, slotW - 4, 34, 6);
-        ctx.fill();
-        drawText(ctx, cd.toFixed(0), sx + (slotW - 4) / 2, barY + 22, {
-          align: 'center', font: '12px sans-serif', color: '#fff'
-        });
-      }
-      ui._hotbtns.push({ id: 'skill' + i, x: sx, y: barY + 8, w: slotW - 4, h: 34, skillId: sk ? sk.id : null });
-    }
+    // 底部快捷栏：缩小 + 半透明 / 无敌人时自动收起
+    drawHotbar(ctx, game, w, h);
 
-    // 右侧功能按钮
-    const fbx = w - 48;
+    // 右侧功能按钮（缩小约 35%）
+    const btnW = Math.round(40 * S);
+    const btnH = Math.round(34 * S);
+    const fbx = w - btnW - 6;
+    const gap = btnH + 8;
     ui._funcBtns = [];
     const funcs = [
-      { id: 'bag', label: '包', y: h - 200 },
-      { id: 'quest', label: '志', y: h - 155 },
-      { id: 'meditate', label: '修', y: h - 110 },
-      { id: 'menu', label: '菜', y: h - 65 }
+      { id: 'bag', label: '包' },
+      { id: 'quest', label: '志' },
+      { id: 'meditate', label: '修' },
+      { id: 'menu', label: '菜' }
     ];
+    let fy = h - 16 - funcs.length * gap;
     for (let i = 0; i < funcs.length; i++) {
       const f = funcs[i];
-      drawButton(ctx, fbx, f.y, 40, 38, f.label);
-      ui._funcBtns.push({ id: f.id, x: fbx, y: f.y, w: 40, h: 38 });
+      drawButton(ctx, fbx, fy, btnW, btnH, f.label, { font: 'bold 12px sans-serif' });
+      ui._funcBtns.push({ id: f.id, x: fbx, y: fy, w: btnW, h: btnH });
+      fy += gap;
     }
 
-    // 交互提示
+    // 交互提示（避开底部热键区）
     if (game._interactHint) {
-      drawText(ctx, game._interactHint, w / 2, h - 75, {
+      drawText(ctx, game._interactHint, w / 2, h - 78, {
         align: 'center', font: '12px sans-serif', color: '#f1c40f', shadow: true
       });
     }
@@ -221,9 +209,9 @@ function createUI(screen) {
       const a = b.t < 0.3 ? b.t / 0.3 : b.t > b.life - 0.4 ? (b.life - b.t) / 0.4 : 1;
       ctx.save();
       ctx.globalAlpha = a;
-      drawPanel(ctx, w / 2 - 120, 40 + i * 36, 240, 30, { gold: true, radius: 6 });
-      drawText(ctx, b.text, w / 2, 48 + i * 36, {
-        align: 'center', font: 'bold 13px sans-serif', color: COLORS.gold
+      drawPanel(ctx, w / 2 - 120, 36 + i * 32, 240, 28, { gold: true, radius: 6 });
+      drawText(ctx, b.text, w / 2, 42 + i * 32, {
+        align: 'center', font: 'bold 12px sans-serif', color: COLORS.gold
       });
       ctx.restore();
     }
@@ -255,6 +243,162 @@ function createUI(screen) {
       });
       ctx.restore();
     }
+  }
+
+  function nearestEnemyDist(game) {
+    if (!game.player || !game.enemies) return Infinity;
+    const pc = game.player.getCenter();
+    let best = Infinity;
+    for (let i = 0; i < game.enemies.length; i++) {
+      const e = game.enemies[i];
+      if (e.dead) continue;
+      const d = dist(pc.x, pc.y, e.x, e.y);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  function drawHotbar(ctx, game, w, h) {
+    const near = nearestEnemyDist(game);
+    const wantShow = near < 140;
+    const targetA = wantShow ? 0.92 : (near < 220 ? 0.4 : 0);
+    ui.hotbarAlpha += (targetA - ui.hotbarAlpha) * 0.15;
+    ui._hotbtns = [];
+    if (ui.hotbarAlpha < 0.05) return;
+
+    const slotW = 30;
+    const barH = 36;
+    const slots = 4;
+    const barW = slotW * slots + 16;
+    const barX = (w - barW) / 2;
+    const barY = h - 44;
+
+    ctx.save();
+    ctx.globalAlpha = ui.hotbarAlpha;
+    drawPanel(ctx, barX, barY, barW, barH, {
+      radius: 6,
+      fill: wantShow ? 'rgba(48,42,36,0.72)' : 'rgba(48,42,36,0.4)'
+    });
+
+    const skills = game.cultivation.state.learned;
+    const ax = barX + 6;
+    drawButton(ctx, ax, barY + 5, slotW - 2, 26, '攻', { font: 'bold 11px sans-serif' });
+    if (ui.hotbarAlpha > 0.35) {
+      ui._hotbtns.push({ id: 'attack', x: ax, y: barY + 5, w: slotW - 2, h: 26 });
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const sx = barX + 6 + (i + 1) * slotW;
+      const sk = SKILLS.find((s) => s.id === skills[i]);
+      const label = sk ? sk.name.slice(0, 2) : '—';
+      const cd = sk ? (game.cultivation.state.skillCd[sk.id] || 0) : 0;
+      drawButton(ctx, sx, barY + 5, slotW - 2, 26, label, {
+        disabled: !sk, font: 'bold 10px sans-serif'
+      });
+      if (cd > 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        roundRect(ctx, sx, barY + 5, slotW - 2, 26, 5);
+        ctx.fill();
+        drawText(ctx, cd.toFixed(0), sx + (slotW - 2) / 2, barY + 14, {
+          align: 'center', font: '10px sans-serif', color: '#fff'
+        });
+      }
+      if (ui.hotbarAlpha > 0.35) {
+        ui._hotbtns.push({ id: 'skill' + i, x: sx, y: barY + 5, w: slotW - 2, h: 26, skillId: sk ? sk.id : null });
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawQuestBrief(ctx, game, w) {
+    ui._questBriefHit = null;
+    const track = game.quests.trackingInfo(game);
+    const bx = 6;
+    const by = 68;
+    const bw = Math.min(260, w - 120);
+    if (!track) {
+      drawPanel(ctx, bx, by, bw, 28, { radius: 5, fill: 'rgba(48,42,36,0.75)' });
+      drawText(ctx, '无事可做，去蚁后处接任务', bx + 8, by + 8, {
+        font: '10px sans-serif', color: COLORS.textDim
+      });
+      ui._questBriefHit = { x: bx, y: by, w: bw, h: 28 };
+      return;
+    }
+    const lines = track.brief || ('[' + track.kind + '] ' + track.name + ' · ' + track.stepText);
+    drawPanel(ctx, bx, by, bw, 34, { radius: 5, fill: 'rgba(48,42,36,0.82)', borderColor: COLORS.gold });
+    drawText(ctx, lines.length > 22 ? lines.slice(0, 22) + '…' : lines, bx + 8, by + 6, {
+      font: 'bold 10px sans-serif', color: COLORS.gold
+    });
+    drawText(ctx, track.stepText, bx + 8, by + 20, {
+      font: '9px sans-serif', color: COLORS.text
+    });
+    ui._questBriefHit = { x: bx, y: by, w: bw, h: 34 };
+  }
+
+  function drawQuestGuide(ctx, game, w, h) {
+    const track = game.quests.trackingInfo(game);
+    if (!track || !track.target) return;
+    const t = track.target;
+    if (t.locked) return; // 不显示死箭头，文案已在简讯
+
+    const cam = game.camera;
+    if (!cam) return;
+    const sp = cam.worldToScreen(t.x, t.y);
+    const margin = 22;
+    const onScreen = sp.x >= margin && sp.x <= w - margin && sp.y >= margin + 40 && sp.y <= h - margin - 50;
+
+    ctx.save();
+    if (onScreen && !t.viaPortal) {
+      // 目标头顶标记
+      const pulse = 6 + Math.sin((game.time || 0) * 5) * 2;
+      ctx.strokeStyle = '#f1c40f';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y - 18, pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(241,196,15,0.35)';
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y - 18, pulse * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      // 向下小箭头
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath();
+      ctx.moveTo(sp.x, sp.y - 6);
+      ctx.lineTo(sp.x - 5, sp.y - 14);
+      ctx.lineTo(sp.x + 5, sp.y - 14);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // 屏幕边缘方向箭头
+      const cx = w / 2;
+      const cy = h / 2;
+      let dx = sp.x - cx;
+      let dy = sp.y - cy;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      dx /= len; dy /= len;
+      const edgePad = 28;
+      // 与矩形边界求交
+      const sx = dx > 0 ? (w - edgePad - cx) / dx : (edgePad - cx) / (dx || 0.0001);
+      const sy = dy > 0 ? (h - edgePad - 40 - cy) / dy : (edgePad + 50 - cy) / (dy || 0.0001);
+      const tHit = Math.min(Math.abs(sx), Math.abs(sy));
+      const ax = cx + dx * tHit;
+      const ay = cy + dy * tHit;
+      const ang = Math.atan2(dy, dx);
+      ctx.translate(ax, ay);
+      ctx.rotate(ang);
+      ctx.fillStyle = 'rgba(241,196,15,0.9)';
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-8, 7);
+      ctx.lineTo(-4, 0);
+      ctx.lineTo(-8, -7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(40,28,10,0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   function drawMinimap(ctx, game, x, y, mw, mh) {
@@ -295,52 +439,63 @@ function createUI(screen) {
   // —— 对话面板 ——
   function drawDialog(ctx, dialog) {
     if (!dialog.state.open) return;
-    const w = screen.designW;
-    const h = screen.designH;
     const st = dialog.state;
-    const slide = Math.min(1, st.anim * 4);
-    const panelH = st.choices && st.full && st.pageIdx >= st.pages.length - 1
-      ? 160 + st.choices.length * 36 : 150;
-    const py = h - panelH * slide;
+    const L = dialog.layout(screen.designW, screen.designH);
 
-    drawPanel(ctx, 10, py, w - 20, panelH - 10, { gold: true, radius: 10 });
+    drawPanel(ctx, L.px, L.py, L.pw, L.panelH - 4, { gold: true, radius: 10 });
 
     // 立绘圆
     ctx.fillStyle = st.color;
     ctx.beginPath();
-    ctx.arc(48, py + 50, 28, 0, Math.PI * 2);
+    ctx.arc(L.px + 38, L.py + 42, 24, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.beginPath();
-    ctx.arc(48, py + 50, 20, 0, Math.PI * 2);
+    ctx.arc(L.px + 38, L.py + 42, 16, 0, Math.PI * 2);
     ctx.fill();
 
     // 名字牌
-    drawPanel(ctx, 82, py + 12, 120, 22, { radius: 4, fill: 'rgba(0,0,0,0.45)', borderColor: COLORS.gold });
-    drawText(ctx, st.speaker, 92, py + 16, { font: 'bold 12px sans-serif', color: COLORS.gold });
+    drawPanel(ctx, L.px + 70, L.py + 8, 130, 20, {
+      radius: 4, fill: 'rgba(0,0,0,0.35)', borderColor: COLORS.gold
+    });
+    drawText(ctx, st.speaker, L.px + 78, L.py + 11, {
+      font: 'bold 11px sans-serif', color: COLORS.gold
+    });
     if (st.role) {
-      drawText(ctx, st.role, 210, py + 18, { font: '10px sans-serif', color: COLORS.textDim });
-    }
-
-    // 文本
-    ctx.font = '13px "PingFang SC",sans-serif';
-    const lines = wrapText(ctx, dialog.visibleText(), w - 100);
-    for (let i = 0; i < lines.length; i++) {
-      drawText(ctx, lines[i], 82, py + 44 + i * 18, { font: '13px "PingFang SC",sans-serif' });
-    }
-
-    if (st.full && !(st.choices && st.pageIdx >= st.pages.length - 1)) {
-      drawText(ctx, '▼', w - 36, py + panelH - 28, {
-        font: '12px sans-serif', color: COLORS.gold
+      drawText(ctx, st.role, L.px + 206, L.py + 12, {
+        font: '10px sans-serif', color: COLORS.textDim
       });
     }
 
-    // 选项
-    if (st.full && st.choices && st.pageIdx >= st.pages.length - 1) {
-      for (let i = 0; i < st.choices.length; i++) {
-        const by = py + 70 + i * 36;
-        drawButton(ctx, 40, by, w - 80, 30, st.choices[i].label);
+    // 文本区（安全区，不侵入底部按键）
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(L.textX - 2, L.textY, L.textW + 4, L.textH - 4);
+    ctx.clip();
+    ctx.font = '13px "PingFang SC",sans-serif';
+    const lines = wrapText(ctx, dialog.visibleText(), L.textW);
+    const maxLines = Math.floor((L.textH - 4) / 17);
+    for (let i = 0; i < Math.min(lines.length, maxLines); i++) {
+      drawText(ctx, lines[i], L.textX, L.textY + 2 + i * 17, {
+        font: '13px "PingFang SC",sans-serif'
+      });
+    }
+    ctx.restore();
+
+    // 选项区 / 下一页按键（固定下部）
+    if (L.hasChoices) {
+      for (let i = 0; i < L.choices.length; i++) {
+        const c = L.choices[i];
+        drawButton(ctx, c.x, c.y, c.w, c.h, c.label, { font: 'bold 12px sans-serif' });
       }
+    } else if (st.full && L.nextBtn) {
+      drawButton(ctx, L.nextBtn.x, L.nextBtn.y, L.nextBtn.w, L.nextBtn.h,
+        st.pageIdx < st.pages.length - 1 ? '下一页' : '关闭',
+        { font: 'bold 11px sans-serif' });
+    } else if (!st.full && L.nextBtn) {
+      drawText(ctx, '…', L.nextBtn.x + L.nextBtn.w / 2, L.nextBtn.y + 6, {
+        align: 'center', font: '12px sans-serif', color: COLORS.gold
+      });
     }
   }
 
@@ -521,7 +676,7 @@ function createUI(screen) {
   function drawQuestLog(ctx, game) {
     const w = screen.designW;
     const h = screen.designH;
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fillRect(0, 0, w, h);
     const px = 15;
     const py = 40;
@@ -529,16 +684,19 @@ function createUI(screen) {
     const ph = h - 80;
     drawPanel(ctx, px, py, pw, ph, { gold: true, radius: 10 });
     drawText(ctx, '任务日志', px + 16, py + 12, { font: 'bold 16px serif', color: COLORS.gold });
+    drawText(ctx, '点击任务可追踪', px + 100, py + 16, { font: '10px sans-serif', color: COLORS.textDim });
     drawButton(ctx, px + pw - 70, py + 8, 54, 28, '关闭');
     ui._qClose = { x: px + pw - 70, y: py + 8, w: 54, h: 28 };
 
     let y = py + 48;
-    drawText(ctx, '进行中', px + 16, y, { font: 'bold 12px sans-serif', color: '#3498db' });
+    drawText(ctx, '进行中', px + 16, y, { font: 'bold 12px sans-serif', color: '#5dade2' });
     y += 20;
     ui._qTrackBtns = [];
     const activeIds = Object.keys(game.quests.state.active);
     if (!activeIds.length) {
-      drawText(ctx, '暂无进行中任务', px + 16, y, { font: '11px sans-serif', color: COLORS.textDim });
+      drawText(ctx, '暂无进行中任务 · 去蚁后/NPC 处接取', px + 16, y, {
+        font: '11px sans-serif', color: COLORS.textDim
+      });
       y += 24;
     }
     for (let i = 0; i < activeIds.length; i++) {
@@ -546,13 +704,15 @@ function createUI(screen) {
       const q = game.quests.getDef(id);
       const step = game.quests.currentStep(id);
       const tracking = game.quests.state.tracking === id;
-      drawPanel(ctx, px + 12, y, pw - 24, 44, { radius: 6, borderColor: tracking ? COLORS.gold : COLORS.panelBorder });
-      drawText(ctx, (q.chapter ? '主线·' : '支线·') + q.name, px + 20, y + 6, {
+      drawPanel(ctx, px + 12, y, pw - 24, 48, {
+        radius: 6, borderColor: tracking ? COLORS.gold : COLORS.panelBorder
+      });
+      drawText(ctx, (q.chapter ? '主线·' : '支线·') + q.name + (tracking ? ' 〔追踪中〕' : ''), px + 20, y + 6, {
         font: 'bold 12px sans-serif', color: COLORS.gold
       });
       drawText(ctx, step ? step.text : '完成', px + 20, y + 24, { font: '10px sans-serif' });
-      ui._qTrackBtns.push({ id, x: px + 12, y, w: pw - 24, h: 44 });
-      y += 52;
+      ui._qTrackBtns.push({ id, x: px + 12, y, w: pw - 24, h: 48 });
+      y += 56;
       if (y > py + ph - 80) break;
     }
 
@@ -594,21 +754,37 @@ function createUI(screen) {
   }
 
   // —— 设置 ——
-  function drawSettings(ctx, settings) {
+  function drawSettings(ctx, settings, daycycle) {
     const w = screen.designW;
     const h = screen.designH;
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillRect(0, 0, w, h);
-    drawPanel(ctx, 40, h / 2 - 100, w - 80, 200, { gold: true, radius: 10 });
-    drawText(ctx, '设 置', w / 2, h / 2 - 85, { align: 'center', font: 'bold 18px serif', color: COLORS.gold });
-    drawText(ctx, '震动反馈：' + (settings.vibrate ? '开' : '关'), 60, h / 2 - 40, { font: '14px sans-serif' });
-    drawButton(ctx, w - 140, h / 2 - 48, 70, 32, '切换');
-    ui._setVibrate = { x: w - 140, y: h / 2 - 48, w: 70, h: 32 };
-    drawText(ctx, '音量（占位）：' + Math.round(settings.volume * 100) + '%', 60, h / 2, { font: '14px sans-serif' });
-    drawButton(ctx, w - 140, h / 2 - 8, 70, 32, '+/-');
-    ui._setVol = { x: w - 140, y: h / 2 - 8, w: 70, h: 32 };
-    drawButton(ctx, (w - 100) / 2, h / 2 + 50, 100, 36, '关闭');
-    ui._setClose = { x: (w - 100) / 2, y: h / 2 + 50, w: 100, h: 36 };
+    drawPanel(ctx, 36, h / 2 - 130, w - 72, 260, { gold: true, radius: 10 });
+    drawText(ctx, '设 置', w / 2, h / 2 - 115, {
+      align: 'center', font: 'bold 18px serif', color: COLORS.gold
+    });
+
+    drawText(ctx, '震动反馈：' + (settings.vibrate ? '开' : '关'), 56, h / 2 - 70, {
+      font: '14px sans-serif'
+    });
+    drawButton(ctx, w - 130, h / 2 - 78, 70, 32, '切换');
+    ui._setVibrate = { x: w - 130, y: h / 2 - 78, w: 70, h: 32 };
+
+    drawText(ctx, '音量（占位）：' + Math.round(settings.volume * 100) + '%', 56, h / 2 - 30, {
+      font: '14px sans-serif'
+    });
+    drawButton(ctx, w - 130, h / 2 - 38, 70, 32, '+/-');
+    ui._setVol = { x: w - 130, y: h / 2 - 38, w: 70, h: 32 };
+
+    const sp = daycycle ? daycycle.speedLabel() : '1×';
+    drawText(ctx, '时间倍速：' + sp + '（1天≈12现实分）', 56, h / 2 + 10, {
+      font: '14px sans-serif'
+    });
+    drawButton(ctx, w - 130, h / 2 + 2, 70, 32, sp);
+    ui._setSpeed = { x: w - 130, y: h / 2 + 2, w: 70, h: 32 };
+
+    drawButton(ctx, (w - 100) / 2, h / 2 + 70, 100, 36, '关闭');
+    ui._setClose = { x: (w - 100) / 2, y: h / 2 + 70, w: 100, h: 36 };
   }
 
   // —— 渡劫界面 ——

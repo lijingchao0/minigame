@@ -99,7 +99,7 @@ function createScreen(cvs) {
     },
     beginFrame() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = '#0a0806';
+      ctx.fillStyle = '#14100c';
       ctx.fillRect(0, 0, sw, sh);
       ctx.save();
       ctx.translate(offsetX, offsetY);
@@ -731,10 +731,24 @@ function createGame(screen) {
       }
     }
 
-    // 左上状态 / 右上资源 / 小地图：视为 UI，不触发移动
+    // 倍速切换
+    if (ui._speedBtn && hitTest(x, y, ui._speedBtn.x, ui._speedBtn.y, ui._speedBtn.w, ui._speedBtn.h)) {
+      const n = game.daycycle.cycleSpeed();
+      game.uiApi.toast('时间倍速 ' + n + '×');
+      return 'ui';
+    }
+
+    // 任务简讯 → 打开任务日志
+    if (ui._questBriefHit && hitTest(x, y, ui._questBriefHit.x, ui._questBriefHit.y, ui._questBriefHit.w, ui._questBriefHit.h)) {
+      ui.panel = 'quests';
+      return 'ui';
+    }
+
+    // 左上状态 / 右上资源 / 小地图：视为 UI，不触发移动（与绘制尺寸同步）
     const w = screen.designW;
-    if (x < 165 && y < 95) return 'ui';
-    if (x > w - 125 && y < 155) return 'ui';
+    if (ui._hudLeft && hitTest(x, y, ui._hudLeft.x, ui._hudLeft.y, ui._hudLeft.w, ui._hudLeft.h)) return 'ui';
+    if (ui._hudRight && hitTest(x, y, ui._hudRight.x, ui._hudRight.y, ui._hudRight.w, ui._hudRight.h)) return 'ui';
+    if (x > w - 105 && y < 130) return 'ui';
 
     // 点击 NPC 附近 → 对话优先
     const world = game.camera.screenToWorld(x, y);
@@ -851,6 +865,11 @@ function createGame(screen) {
     }
     if (ui._setVol && hitTest(x, y, ui._setVol.x, ui._setVol.y, ui._setVol.w, ui._setVol.h)) {
       game.settings.volume = game.settings.volume >= 0.9 ? 0.3 : game.settings.volume + 0.2;
+      return;
+    }
+    if (ui._setSpeed && hitTest(x, y, ui._setSpeed.x, ui._setSpeed.y, ui._setSpeed.w, ui._setSpeed.h)) {
+      const n = game.daycycle.cycleSpeed();
+      game.uiApi.toast('时间倍速 ' + n + '×');
     }
   }
 
@@ -1173,7 +1192,7 @@ function createGame(screen) {
     if (game.mode === 'title') {
       game.uiApi.drawTitle(ctx, game.save.hasSave(), game.settings);
       if (game.uiApi.ui.panel === 'settings') {
-        game.uiApi.drawSettings(ctx, game.settings);
+        game.uiApi.drawSettings(ctx, game.settings, game.daycycle);
       }
       screen.endFrame();
       return;
@@ -1251,7 +1270,7 @@ function createGame(screen) {
     if (panel === 'inventory') game.uiApi.drawInventory(ctx, game);
     else if (panel === 'quests') game.uiApi.drawQuestLog(ctx, game);
     else if (panel === 'shop') game.uiApi.drawShop(ctx, game);
-    else if (panel === 'settings') game.uiApi.drawSettings(ctx, game.settings);
+    else if (panel === 'settings') game.uiApi.drawSettings(ctx, game.settings, game.daycycle);
     else if (panel === 'menu') {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0, 0, w, h);

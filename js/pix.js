@@ -4,24 +4,26 @@
 const TILE = 16; // 设计瓦片大小（像素）
 
 const COLORS = {
-  grass: ['#3d7a3a', '#4a8f45', '#356b32', '#457a40', '#2d5e2a'],
-  dirt: ['#8b6914', '#7a5c10', '#9a7520'],
-  stone: ['#6b6b6b', '#5a5a5a', '#7a7a7a', '#4a4a4a'],
-  water: ['#2a6a9a', '#3a7aaa', '#1a5a8a', '#4a8aba'],
-  nest: ['#5c4030', '#4a3225', '#6b4a35', '#3d2a1f'],
-  wood: ['#8b5a2b', '#6b4420', '#a06a35'],
-  gold: '#d4a017',
-  panel: 'rgba(28, 22, 16, 0.88)',
-  panelBorder: '#8b6914',
-  text: '#f5e6c8',
-  textDim: '#a89070',
-  hp: '#c0392b',
-  mp: '#2980b9',
-  xp: '#27ae60',
+  // 地表提亮，暗部减淡
+  grass: ['#4f9a48', '#5aad52', '#459440', '#56a34c', '#3d8538'],
+  dirt: ['#a07a28', '#8f6c1c', '#b08930'],
+  stone: ['#7e7e7e', '#6e6e6e', '#8e8e8e', '#5e5e5e'],
+  water: ['#3a7eae', '#4a8ebe', '#2a6e9e', '#5a9ece'],
+  nest: ['#6e5040', '#5c4232', '#7a5a42', '#4e3828'],
+  wood: ['#9a6a38', '#7a5428', '#b07a42'],
+  gold: '#e8bc3a',
+  // UI：稍亮深棕/蓝灰，对比更清晰
+  panel: 'rgba(48, 42, 36, 0.9)',
+  panelBorder: '#a88840',
+  text: '#fff6e0',
+  textDim: '#c8b090',
+  hp: '#d94a3a',
+  mp: '#3a90c8',
+  xp: '#36c070',
   danger: '#e74c3c',
-  night: 'rgba(10, 15, 40, 0.45)',
-  dusk: 'rgba(80, 40, 20, 0.25)',
-  dawn: 'rgba(255, 180, 100, 0.12)'
+  night: 'rgba(15, 22, 48, 0.28)',
+  dusk: 'rgba(90, 50, 30, 0.18)',
+  dawn: 'rgba(255, 190, 120, 0.1)'
 };
 
 /** 填充圆角矩形 */
@@ -85,7 +87,7 @@ function drawButton(ctx, x, y, w, h, label, opts) {
   ctx.restore();
 }
 
-/** 像素风文字 */
+/** 像素风文字 — 默认浅描边保证任意背景可读 */
 function drawText(ctx, text, x, y, opts) {
   opts = opts || {};
   ctx.save();
@@ -93,8 +95,14 @@ function drawText(ctx, text, x, y, opts) {
   ctx.fillStyle = opts.color || COLORS.text;
   ctx.textAlign = opts.align || 'left';
   ctx.textBaseline = opts.baseline || 'top';
-  if (opts.shadow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  if (opts.shadow !== false) {
+    ctx.lineWidth = opts.strokeWidth || 2.5;
+    ctx.strokeStyle = opts.stroke || 'rgba(20,14,8,0.72)';
+    ctx.lineJoin = 'round';
+    ctx.strokeText(text, x, y);
+  }
+  if (opts.shadow === true) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.fillText(text, x + 1, y + 1);
     ctx.fillStyle = opts.color || COLORS.text;
   }
@@ -137,10 +145,10 @@ function noise2(x, y) {
   return n - Math.floor(n);
 }
 
-/** 椭圆阴影 */
+/** 椭圆阴影（减淡） */
 function drawShadow(ctx, x, y, rx, ry) {
   ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
   ctx.beginPath();
   ctx.ellipse(x, y, rx, ry || rx * 0.45, 0, 0, Math.PI * 2);
   ctx.fill();

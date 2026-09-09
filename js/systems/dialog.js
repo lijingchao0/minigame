@@ -1,5 +1,6 @@
 /**
  * 对话系统 — 打字机 + 选项 + 立绘
+ * 布局：文本区与按键/选项区分离，避免遮挡
  */
 function createDialog() {
   const state = {
@@ -89,24 +90,80 @@ function createDialog() {
     if (c.onSelect) c.onSelect();
   }
 
+  /**
+   * 计算对话面板布局（绘制与点击共用）
+   * 文本区在上，选项/下一页按键固定在下部，互不重叠
+   */
+  function layout(designW, designH) {
+    const hasChoices = !!(state.full && state.choices && state.choices.length &&
+      state.pageIdx >= state.pages.length - 1);
+    const choiceN = hasChoices ? state.choices.length : 0;
+    const pad = 12;
+    const nameH = 36;
+    const textH = 78;
+    const choiceRowH = 32;
+    const choiceGap = 6;
+    const footerH = hasChoices
+      ? choiceN * (choiceRowH + choiceGap) + 8
+      : 30;
+    const panelH = nameH + textH + footerH + pad;
+    const slide = Math.min(1, state.anim * 4);
+    const py = designH - panelH * slide;
+    const px = 10;
+    const pw = designW - 20;
+
+    const textX = 78;
+    const textY = py + nameH;
+    const textW = pw - 90;
+    const footerY = py + nameH + textH;
+
+    const choices = [];
+    if (hasChoices) {
+      // 超过 2 个纵向排列；≤2 也纵向，避免与文字重叠
+      for (let i = 0; i < choiceN; i++) {
+        choices.push({
+          i,
+          x: px + 16,
+          y: footerY + 4 + i * (choiceRowH + choiceGap),
+          w: pw - 32,
+          h: choiceRowH,
+          label: state.choices[i].label
+        });
+      }
+    }
+
+    const nextBtn = !hasChoices ? {
+      x: px + pw - 76,
+      y: footerY + 2,
+      w: 64,
+      h: 26
+    } : null;
+
+    return {
+      px, py, pw, panelH, nameH, textH, textX, textY, textW,
+      footerY, footerH, hasChoices, choices, nextBtn, slide
+    };
+  }
+
   function handleTap(x, y, designW, designH) {
     if (!state.open) return false;
-    // 选项区
-    if (state.full && state.choices && state.pageIdx >= state.pages.length - 1) {
-      const panelY = designH - 200;
-      for (let i = 0; i < state.choices.length; i++) {
-        const by = panelY + 70 + i * 36;
-        if (y >= by && y <= by + 30 && x >= 40 && x <= designW - 40) {
-          selectChoice(i);
+    const L = layout(designW, designH);
+    if (L.hasChoices) {
+      for (let i = 0; i < L.choices.length; i++) {
+        const c = L.choices[i];
+        if (y >= c.y && y <= c.y + c.h && x >= c.x && x <= c.x + c.w) {
+          selectChoice(c.i);
           return true;
         }
       }
+      // 点选项区外的面板仍可点，但不误触选项
+      return true;
     }
     advance();
     return true;
   }
 
-  return { state, open, close, update, advance, selectChoice, handleTap, visibleText, currentText };
+  return { state, open, close, update, advance, selectChoice, handleTap, visibleText, currentText, layout };
 }
 
 module.exports = { createDialog };

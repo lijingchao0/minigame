@@ -112,13 +112,13 @@ function createTilemap(cols, rows, seed) {
       case T.WATER: return COLORS.water[(n * COLORS.water.length) | 0];
       case T.SAND: return n > 0.5 ? '#c2b280' : '#b8a66a';
       case T.NEST_FLOOR: return COLORS.nest[(n * COLORS.nest.length) | 0];
-      case T.NEST_WALL: return '#2a1a12';
-      case T.MUSHROOM_FLOOR: return n > 0.5 ? '#3a2a4a' : '#2a1a3a';
-      case T.DARK_GRASS: return n > 0.5 ? '#1a3a1a' : '#143014';
-      case T.PATH: return '#9a7a40';
-      case T.FLOWER_BED: return '#4a7a3a';
-      case T.DEW: return '#5a9aba';
-      default: return '#111';
+      case T.NEST_WALL: return '#3a2818';
+      case T.MUSHROOM_FLOOR: return n > 0.5 ? '#4a3a5a' : '#3a2a4a';
+      case T.DARK_GRASS: return n > 0.5 ? '#2a5a2a' : '#245024';
+      case T.PATH: return '#b09050';
+      case T.FLOWER_BED: return '#5a9a48';
+      case T.DEW: return '#6aacc8';
+      default: return '#222';
     }
   }
 
@@ -130,7 +130,7 @@ function createTilemap(cols, rows, seed) {
     if (t === T.GRASS || t === T.GRASS2 || t === T.DARK_GRASS) {
       const n = noise2(tx, ty + 9);
       if (n > 0.7) {
-        ctx.fillStyle = 'rgba(20,60,20,0.35)';
+        ctx.fillStyle = 'rgba(30,80,30,0.22)';
         ctx.fillRect(sx + 4, sy + 6, 2, 5);
         ctx.fillRect(sx + 10, sy + 4, 2, 6);
       }
@@ -167,7 +167,7 @@ function createTilemap(cols, rows, seed) {
         drawShadow(ctx, sp.x, sp.y + 4, 10, 4);
         ctx.fillStyle = '#4a3020';
         ctx.fillRect(sp.x - 3, sp.y - 18, 6, 20);
-        ctx.fillStyle = d.variant === 0 ? '#2d6b2a' : d.variant === 1 ? '#3a7a35' : '#256020';
+        ctx.fillStyle = d.variant === 0 ? '#3d8b38' : d.variant === 1 ? '#4a9a42' : '#358035';
         ctx.beginPath();
         ctx.arc(sp.x, sp.y - 22, 14, 0, Math.PI * 2);
         ctx.fill();
@@ -210,7 +210,7 @@ function createTilemap(cols, rows, seed) {
       }
       case 'bush': {
         drawShadow(ctx, sp.x, sp.y + 2, 9, 3);
-        ctx.fillStyle = '#2a5a28';
+        ctx.fillStyle = '#3a7a36';
         ctx.beginPath();
         ctx.arc(sp.x - 4, sp.y - 2, 7, 0, Math.PI * 2);
         ctx.arc(sp.x + 4, sp.y - 2, 7, 0, Math.PI * 2);

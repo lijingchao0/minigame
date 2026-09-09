@@ -1,6 +1,47 @@
 /**
  * 任务系统 — 主线 + 支线网状关联
  */
+const { TILE, dist } = require('../pix.js');
+
+/** NPC 主居所（跨区域指引用） */
+const NPC_HOME = {
+  queen: { region: 'nest_cave', x: 10 * TILE, y: 12 * TILE, name: '蚁后·瑶光' },
+  king_ant: { region: 'nest_cave', x: 46 * TILE, y: 10 * TILE, name: '蚁王·玄尘' },
+  worker_elder: { region: 'nest_cave', x: 30 * TILE, y: 14 * TILE, name: '工蚁长老·土伯' },
+  nurse_ant: { region: 'nest_cave', x: 30 * TILE, y: 30 * TILE, name: '育婴蚁·暖心' },
+  soldier_captain: { region: 'kingdom_gate', x: 36 * TILE, y: 16 * TILE, name: '兵蚁队长·铁颚' },
+  scout_ant: { region: 'grassland', x: 32 * TILE, y: 8 * TILE, name: '侦察蚁·疾风' },
+  ladybug_merchant: { region: 'grassland', x: 22 * TILE, y: 18 * TILE, name: '瓢虫商人·斑斑' },
+  grasshopper: { region: 'grassland', x: 40 * TILE, y: 30 * TILE, name: '蚂蚱旅人·跳跳' },
+  bee_messenger: { region: 'kingdom_gate', x: 22 * TILE, y: 18 * TILE, name: '蜜蜂信使·嗡嗡' },
+  firefly_guide: { region: 'dew_pond', x: 20 * TILE, y: 28 * TILE, name: '萤火虫·微光' }
+};
+
+/** 采集物常见区域 */
+const ITEM_REGION = {
+  berry: 'grassland',
+  spirit_herb: 'grassland',
+  ant_food: 'nest_cave',
+  dew_drop: 'dew_pond',
+  spirit_water: 'mushroom_forest',
+  glow_mushroom: 'mushroom_forest',
+  spirit_stone: 'mushroom_forest',
+  tribulation_herb: 'borderlands',
+  wood: 'grassland',
+  stolen_goods: 'grassland',
+  queen_letter: 'nest_cave',
+  seed_pack: 'grassland'
+};
+
+const REGION_GRAPH = {
+  grassland: ['kingdom_gate', 'dew_pond', 'mushroom_forest'],
+  kingdom_gate: ['nest_cave', 'grassland', 'dew_pond'],
+  nest_cave: ['kingdom_gate'],
+  dew_pond: ['grassland', 'kingdom_gate', 'borderlands'],
+  mushroom_forest: ['grassland', 'borderlands'],
+  borderlands: ['dew_pond', 'mushroom_forest', 'grassland']
+};
+
 const MAIN_QUESTS = [
   {
     id: 'm1', chapter: 1, name: '灵智初开',
@@ -650,15 +691,255 @@ function createQuestSystem() {
 
   function trackingInfo(game) {
     if (!state.tracking || !state.active[state.tracking]) {
+      // 优先主线进行中
       const keys = Object.keys(state.active);
       if (!keys.length) return null;
-      state.tracking = keys[0];
+      const main = keys.find((k) => k.charAt(0) === 'm');
+      state.tracking = main || keys[0];
     }
     const id = state.tracking;
     const q = getDef(id);
     const step = currentStep(id);
     if (!q || !step) return null;
-    return { id, name: q.name, stepText: step.text, chapter: q.chapter || null };
+    const kind = q.chapter ? '主线' : '支线';
+    const target = resolveQuestTarget(game, id, step);
+    let brief = '[' + kind + '] ' + q.name + ' · ' + step.text;
+    let hint = null;
+    if (target) {
+      if (target.locked) {
+        hint = target.lockReason || '需先提升王国繁荣度解锁';
+        brief += '（' + hint + '）';
+      } else if (target.dist != null) {
+        brief += ' · ' + Math.round(target.dist) + '步';
+      } else if (target.dirLabel) {
+        brief += ' · ' + target.dirLabel;
+      }
+    }
+    return {
+      id, name: q.name, stepText: step.text, chapter: q.chapter || null,
+      kind, brief, hint, target
+    };
+  }
+
+  function nextRegionToward(fromId, toId) {
+    if (fromId === toId) return null;
+    const queue = [fromId];
+    const prev = {};
+    prev[fromId] = null;
+    while (queue.length) {
+      const cur = queue.shift();
+      const links = REGION_GRAPH[cur] || [];
+      for (let i = 0; i < links.length; i++) {
+        const n = links[i];
+        if (prev[n] !== undefined) continue;
+        prev[n] = cur;
+        if (n === toId) {
+          // 回溯得到 from 的下一跳
+          let step = n;
+          while (prev[step] !== fromId && prev[step] != null) step = prev[step];
+          return step;
+        }
+        queue.push(n);
+      }
+    }
+    return null;
+  }
+
+  function findPortalInRegion(region, toRegionId) {
+    if (!region || !region.map || !region.map.portals) return null;
+    const portals = region.map.portals;
+    let best = null;
+    for (let i = 0; i < portals.length; i++) {
+      if (portals[i].toRegion === toRegionId) {
+        best = portals[i];
+        break;
+      }
+    }
+    return best;
+  }
+
+  function portalWorldPos(p) {
+    return { x: p.tx * TILE + TILE / 2, y: p.ty * TILE + TILE / 2 };
+  }
+
+  /** 在当前/缓存区域找 NPC */
+  function locateNpc(game, npcId) {
+    if (game.npcs) {
+      for (let i = 0; i < game.npcs.length; i++) {
+        if (game.npcs[i].defId === npcId) {
+          return {
+            region: game.regions.getCurrentId(),
+            x: game.npcs[i].x,
+            y: game.npcs[i].y,
+            name: game.npcs[i].def.name
+          };
+        }
+      }
+    }
+    const home = NPC_HOME[npcId];
+    if (!home) return null;
+    try {
+      const reg = game.regions.getOrBuild(home.region);
+      if (reg && reg.npcs) {
+        for (let i = 0; i < reg.npcs.length; i++) {
+          if (reg.npcs[i].defId === npcId) {
+            return {
+              region: home.region,
+              x: reg.npcs[i].x,
+              y: reg.npcs[i].y,
+              name: home.name
+            };
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return { region: home.region, x: home.x, y: home.y, name: home.name };
+  }
+
+  function locateGather(game, itemId) {
+    const curId = game.regions.getCurrentId();
+    const cur = game.regions.getCurrent();
+    let best = null;
+    let bestD = Infinity;
+    const pc = game.player.getCenter();
+    const list = game.gatherables || (cur && cur.gatherables) || [];
+    for (let i = 0; i < list.length; i++) {
+      const g = list[i];
+      if (g.itemId !== itemId || g.taken) continue;
+      const d = dist(pc.x, pc.y, g.x, g.y);
+      if (d < bestD) { bestD = d; best = { region: curId, x: g.x, y: g.y }; }
+    }
+    if (best) return best;
+    const prefer = ITEM_REGION[itemId];
+    if (prefer && prefer !== curId) {
+      try {
+        const reg = game.regions.getOrBuild(prefer);
+        const gs = reg.gatherables || [];
+        for (let i = 0; i < gs.length; i++) {
+          if (gs[i].itemId === itemId && !gs[i].taken) {
+            return { region: prefer, x: gs[i].x, y: gs[i].y };
+          }
+        }
+        if (reg.spawn) return { region: prefer, x: reg.spawn.x, y: reg.spawn.y };
+      } catch (e) { /* ignore */ }
+    }
+    return prefer ? { region: prefer, x: 0, y: 0 } : null;
+  }
+
+  function locateEnemy(game, enemyType) {
+    const curId = game.regions.getCurrentId();
+    const pc = game.player.getCenter();
+    let best = null;
+    let bestD = Infinity;
+    for (let i = 0; i < (game.enemies || []).length; i++) {
+      const e = game.enemies[i];
+      if (e.dead || e.type !== enemyType) continue;
+      const d = dist(pc.x, pc.y, e.x, e.y);
+      if (d < bestD) { bestD = d; best = { region: curId, x: e.x, y: e.y }; }
+    }
+    if (best) return best;
+    // 常见刷怪区
+    const guess = {
+      spider: 'grassland', wasp: 'dew_pond', anteater: 'borderlands',
+      shadow_scorpion: 'mushroom_forest', heart_demon: 'nest_cave'
+    }[enemyType] || curId;
+    if (guess !== curId) {
+      const reg = game.regions.getOrBuild(guess);
+      return { region: guess, x: reg.spawn.x, y: reg.spawn.y };
+    }
+    return null;
+  }
+
+  /**
+   * 通用目标定位：返回世界坐标指引信息
+   * { x, y, region, onScreen, locked, lockReason, dist, label, dirLabel }
+   */
+  function resolveQuestTarget(game, questId, step) {
+    if (!step || !game || !game.player) return null;
+    const curId = game.regions.getCurrentId();
+    const region = game.regions.getCurrent();
+    const pc = game.player.getCenter();
+    let raw = null;
+
+    if (step.type === 'talk' || step.type === 'deliver' || step.type === 'choice' || step.type === 'escort') {
+      const npcId = step.npc || (getDef(questId) && getDef(questId).giver);
+      raw = locateNpc(game, npcId);
+    } else if (step.type === 'gather') {
+      raw = locateGather(game, step.item);
+    } else if (step.type === 'visit' || step.type === 'escort') {
+      raw = { region: step.region, x: 0, y: 0 };
+      try {
+        const reg = game.regions.getOrBuild(step.region);
+        raw.x = reg.spawn.x; raw.y = reg.spawn.y;
+      } catch (e) { /* ignore */ }
+    } else if (step.type === 'kill') {
+      raw = locateEnemy(game, step.enemy);
+    } else if (step.type === 'meditate') {
+      raw = { region: 'nest_cave', x: 48 * TILE, y: 8 * TILE, label: '修炼室' };
+    } else if (step.type === 'shop_buy') {
+      raw = locateNpc(game, 'ladybug_merchant');
+    } else if (step.type === 'minigame' || step.type === 'defend') {
+      const q = getDef(questId);
+      raw = locateNpc(game, q && q.giver);
+    }
+
+    if (!raw || !raw.region) return null;
+
+    // 目标区域未解锁
+    if (!game.regions.isUnlocked(raw.region)) {
+      const meta = game.regions.REGION_META[raw.region] || {};
+      return {
+        locked: true,
+        region: raw.region,
+        lockReason: '需先提升王国繁荣度解锁「' + (meta.name || raw.region) + '」',
+        label: meta.name || raw.region
+      };
+    }
+
+    let wx = raw.x;
+    let wy = raw.y;
+    let viaPortal = false;
+
+    if (raw.region !== curId) {
+      const next = nextRegionToward(curId, raw.region) || raw.region;
+      const portal = findPortalInRegion(region, next);
+      if (portal) {
+        const pp = portalWorldPos(portal);
+        wx = pp.x; wy = pp.y;
+        viaPortal = true;
+      } else {
+        // 无直接传送点时指向区域中心偏上
+        wx = region.map.pixelW() / 2;
+        wy = 24;
+        viaPortal = true;
+      }
+    }
+
+    const d = dist(pc.x, pc.y, wx, wy);
+    let dirLabel = '';
+    const dx = wx - pc.x;
+    const dy = wy - pc.y;
+    if (Math.abs(dx) > Math.abs(dy)) dirLabel = dx > 0 ? '向东' : '向西';
+    else dirLabel = dy > 0 ? '向南' : '向北';
+    if (viaPortal) dirLabel = '前往' + (game.regions.REGION_META[raw.region] || {}).name;
+
+    const cam = game.camera;
+    let onScreen = false;
+    if (cam && raw.region === curId) {
+      onScreen = cam.inView(wx, wy, 20);
+    }
+
+    return {
+      x: wx, y: wy, region: raw.region, targetRegion: raw.region,
+      onScreen, locked: false, dist: d, dirLabel,
+      label: raw.name || step.text, viaPortal
+    };
+  }
+
+  function getQuestTarget(game) {
+    const info = trackingInfo(game);
+    if (!info) return null;
+    return info.target || resolveQuestTarget(game, info.id, currentStep(info.id));
   }
 
   function updateBanners(dt) {
@@ -694,8 +975,9 @@ function createQuestSystem() {
     state, MAIN_QUESTS, SIDE_QUESTS,
     getDef, allDefs, canAccept, accept, currentStep, advanceStep, complete,
     onTalk, onGather, onKill, onVisit, onMeditate, onShopBuy, resolveChoice,
-    getQuestIcon, trackingInfo, updateBanners, serialize, deserialize, bootstrap,
-    isCompleted, isActive
+    getQuestIcon, trackingInfo, getQuestTarget, resolveQuestTarget,
+    updateBanners, serialize, deserialize, bootstrap,
+    isCompleted, isActive, NPC_HOME
   };
 }
 

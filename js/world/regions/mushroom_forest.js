@@ -94,7 +94,7 @@ function createMushroomForest() {
     gatherables,
     npcs,
     enemies,
-    ambientDark: 0.35,
+    ambientDark: 0.18,
     needUnlock: true,
     opportunities: [
       { id: 'mush_ancient_stone', name: '古仙缘石', x: 18 * TILE, y: 14 * TILE, color: '#e8d5ff' }

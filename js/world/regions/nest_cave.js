@@ -74,7 +74,7 @@ function createNestCave() {
     gatherables,
     npcs,
     enemies: [], // 安全区
-    ambientDark: 0.15,
+    ambientDark: 0.08,
     opportunities: [
       { id: 'nest_heritage', name: '传承之地', x: 48 * TILE, y: 8 * TILE, color: '#9b59b6' }
     ]
