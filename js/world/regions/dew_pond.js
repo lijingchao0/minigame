@@ -93,7 +93,10 @@ function createDewPond() {
     gatherables,
     npcs,
     enemies,
-    waterAnim: true
+    waterAnim: true,
+    opportunities: [
+      { id: 'dew_isle_spring', name: '岛心灵泉', x: 28 * TILE, y: 20 * TILE, color: '#4ecfff' }
+    ]
   };
 }
 

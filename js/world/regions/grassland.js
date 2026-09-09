@@ -116,7 +116,11 @@ function createGrassland() {
     gatherables,
     npcs,
     enemies,
-    leaves: true
+    leaves: true,
+    opportunities: [
+      { id: 'gl_fairy_stone', name: '仙缘石', x: 48 * TILE, y: 22 * TILE, color: '#f1c40f' },
+      { id: 'gl_hidden_spring', name: '隐秘灵泉', x: 12 * TILE, y: 28 * TILE, color: '#4ecfff' }
+    ]
   };
 }
 

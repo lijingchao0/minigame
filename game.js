@@ -12,7 +12,7 @@ const { createNpc, findNearestNpc } = require('./js/entities/npc.js');
 const { createEnemy } = require('./js/entities/enemy.js');
 const { drawGatherable, findNearestGatherable, drawDrop, ITEM_DEFS } = require('./js/entities/item.js');
 const { createParticles } = require('./js/entities/particles.js');
-const { createCultivation, ROOTS } = require('./js/systems/cultivation.js');
+const { createCultivation } = require('./js/systems/cultivation.js');
 const { createInventory } = require('./js/systems/inventory.js');
 const { createEconomy } = require('./js/systems/economy.js');
 const { createKingdom } = require('./js/systems/kingdom.js');
@@ -22,6 +22,8 @@ const { createDialog } = require('./js/systems/dialog.js');
 const { createQuestSystem } = require('./js/systems/quests.js');
 const { createSave } = require('./js/systems/save.js');
 const { createUI } = require('./js/ui/ui.js');
+const { findPath } = require('./js/engine/pathfind.js');
+const { drawOpportunity, findNearbyOpportunity, triggerOpportunity } = require('./js/systems/opportunity.js');
 
 // ========== Canvas 获取 ==========
 function getCanvas() {
@@ -137,11 +139,14 @@ function createGame(screen) {
     uiApi: createUI(screen),
     input: null,
     settings: null,
-    mode: 'title', // title | root | play
+    mode: 'title', // title | play
     time: 0,
     leafTimer: 0,
     fireflyTimer: 0,
     gatherables: [],
+    opportunities: [],
+    walkPath: [],
+    walkPathIdx: 0,
     _interactHint: null,
     _portalCd: 0,
     heartDemonSpawned: false,
@@ -183,26 +188,52 @@ function createGame(screen) {
       }
     }
     game.gatherables = region.gatherables || [];
+    game.opportunities = region.opportunities || [];
     game.drops = [];
+    clearWalk();
     game.camera.follow(res.x, res.y, true);
     game.quests.onVisit(id, game);
     return region;
   }
 
-  function startNewGame(root) {
+  function clearWalk() {
+    game.walkPath = [];
+    game.walkPathIdx = 0;
+    if (game.input) game.input.clearWalkTarget();
+  }
+
+  function setWalkTo(worldX, worldY) {
+    if (!game.player || !game.regions.getCurrent()) return;
+    const map = game.regions.getCurrent().map;
+    const pc = game.player.getCenter();
+    game.walkPath = findPath(map, pc.x, pc.y, worldX, worldY);
+    game.walkPathIdx = 0;
+    game.input.setWalkTarget(worldX, worldY);
+  }
+
+  function startNewGame() {
     game.player = createPlayer(0, 0);
-    game.cultivation.state.root = root;
+    game.cultivation.state.realm = 0;
+    game.cultivation.state.stage = 0;
+    game.cultivation.state.xp = 0;
+    game.cultivation.state.learned = [];
+    game.cultivation.state.skillCd = {};
+    game.cultivation.state.triggeredOpps = [];
+    game.cultivation.state.tribulation = null;
+    game.cultivation.generateRandomRoots();
     game.cultivation.applyStats(game.player);
     game.player.hp = game.player.maxHp;
     game.player.mp = game.player.maxMp;
     game.inventory.state.gold = 20;
+    game.inventory.state.slots = [];
+    game.inventory.state.equip = { neck: null, armor: null };
     game.inventory.add('berry', 2);
     game.inventory.add('hp_pill', 1);
     loadRegion('grassland');
     game.mode = 'play';
     game.uiApi.ui.titlePhase = 'game';
     game.uiApi.ui.panel = null;
-    // 开场对话
+    const rootLabel = game.cultivation.rootsLabel();
     setTimeout(() => {
       game.dialog.open({
         speaker: '意识',
@@ -211,10 +242,11 @@ function createGame(screen) {
         pages: [
           '头痛……触角为何在发光？',
           '我……能思考了？我是一只开了灵智的工蚁。',
+          '体内灵根已定：' + rootLabel + '。',
           '北边有同伴的气息。去找侦察蚁·疾风问问看。'
         ],
         onClose: () => {
-          game.uiApi.toast('移动：左下摇杆 / WASD · 点触行走');
+          game.uiApi.toast('点击地图移动 · 灵根：' + rootLabel);
         }
       });
     }, 400);
@@ -241,7 +273,7 @@ function createGame(screen) {
     loadRegion(data.player.region || 'grassland', data.player.x, data.player.y);
     game.mode = 'play';
     game.uiApi.ui.titlePhase = 'game';
-    game.uiApi.toast('欢迎回来，' + game.cultivation.realmName());
+    game.uiApi.toast('欢迎回来 · ' + game.cultivation.rootsLabel());
     return true;
   }
 
@@ -258,6 +290,7 @@ function createGame(screen) {
       return;
     }
     game._portalCd = 1.2;
+    clearWalk();
     const dest = portal.toRegion;
     const tx = portal.toX;
     const ty = portal.toY;
@@ -574,17 +607,15 @@ function createGame(screen) {
   }
 
   // —— 输入处理 ——
+  /** @returns {'ui'|'npc'|'world'|void} 命中类型；world 时由调用方设寻路 */
   function handlePlayTap(x, y) {
     const ui = game.uiApi.ui;
 
     // 渡劫中
-    if (game.cultivation.state.tribulation) return;
+    if (game.cultivation.state.tribulation) return 'ui';
 
     // 萤火虫小游戏
     if (game.quests.state.minigame) {
-      const btns = game.uiApi.ui._ffBtns || [];
-      // drawFireflyGame 填充 _ffBtns，在 update 后可能为空；在 draw 后有值
-      // 这里用几何计算
       const w = screen.designW;
       const h = screen.designH;
       const positions = [
@@ -597,38 +628,38 @@ function createGame(screen) {
         const p = positions[i];
         if (dist(x, y, p.x, p.y) < 32) {
           handleFireflyTap(i);
-          return;
+          return 'ui';
         }
       }
-      return;
+      return 'ui';
     }
 
     if (game.dialog.state.open) {
       game.dialog.handleTap(x, y, screen.designW, screen.designH);
-      return;
+      return 'ui';
     }
 
     if (ui.panel === 'inventory') {
       handleInvTap(x, y);
-      return;
+      return 'ui';
     }
     if (ui.panel === 'quests') {
       if (ui._qClose && hitTest(x, y, ui._qClose.x, ui._qClose.y, ui._qClose.w, ui._qClose.h)) {
-        ui.panel = null; return;
+        ui.panel = null; return 'ui';
       }
       const tbs = ui._qTrackBtns || [];
       for (let i = 0; i < tbs.length; i++) {
         if (hitTest(x, y, tbs[i].x, tbs[i].y, tbs[i].w, tbs[i].h)) {
           game.quests.state.tracking = tbs[i].id;
           game.uiApi.toast('追踪：' + game.quests.getDef(tbs[i].id).name);
-          return;
+          return 'ui';
         }
       }
-      return;
+      return 'ui';
     }
     if (ui.panel === 'shop') {
       if (ui._shopClose && hitTest(x, y, ui._shopClose.x, ui._shopClose.y, ui._shopClose.w, ui._shopClose.h)) {
-        ui.panel = null; return;
+        ui.panel = null; return 'ui';
       }
       const items = ui._shopItems || [];
       for (let i = 0; i < items.length; i++) {
@@ -636,17 +667,16 @@ function createGame(screen) {
           const r = game.economy.buy(game.inventory, items[i].id);
           game.uiApi.toast(r.msg);
           if (r.ok) game.quests.onShopBuy(game);
-          return;
+          return 'ui';
         }
       }
-      return;
+      return 'ui';
     }
     if (ui.panel === 'settings') {
       handleSettingsTap(x, y);
-      return;
+      return 'ui';
     }
     if (ui.panel === 'menu') {
-      // 简单菜单
       const w = screen.designW;
       const h = screen.designH;
       const items = [
@@ -670,10 +700,10 @@ function createGame(screen) {
           } else {
             ui.panel = null;
           }
-          return;
+          return 'ui';
         }
       }
-      return;
+      return 'ui';
     }
 
     // HUD 按钮
@@ -686,7 +716,7 @@ function createGame(screen) {
         } else if (b.skillId) {
           game.cultivation.useSkill(b.skillId, game.player, game.enemies, game.particles);
         }
-        return;
+        return 'ui';
       }
     }
     const funcs = ui._funcBtns || [];
@@ -697,19 +727,44 @@ function createGame(screen) {
         else if (b.id === 'quest') ui.panel = 'quests';
         else if (b.id === 'meditate') doMeditate();
         else if (b.id === 'menu') ui.panel = 'menu';
-        return;
+        return 'ui';
       }
     }
 
-    // 点哪走哪已在 input 处理；此处尝试交互（点 NPC 附近）
+    // 左上状态 / 右上资源 / 小地图：视为 UI，不触发移动
+    const w = screen.designW;
+    if (x < 165 && y < 95) return 'ui';
+    if (x > w - 125 && y < 155) return 'ui';
+
+    // 点击 NPC 附近 → 对话优先
     const world = game.camera.screenToWorld(x, y);
     const npc = findNearestNpc(game.npcs, world.x, world.y, 24);
     if (npc && dist(game.player.getCenter().x, game.player.getCenter().y, npc.getCenter().x, npc.getCenter().y) < 40) {
+      clearWalk();
       openNpcDialog(npc);
-      return;
+      return 'npc';
     }
-    // 靠近时点空地也可交互
-    interact();
+
+    // 机缘点优先交互
+    const opp = findNearbyOpportunity(game.opportunities || [], world.x, world.y, 20, game.cultivation);
+    if (opp && dist(game.player.getCenter().x, game.player.getCenter().y, opp.x, opp.y) < 36) {
+      clearWalk();
+      const res = triggerOpportunity(opp, game);
+      if (res) game.uiApi.toast(res.name + '！' + res.msg);
+      return 'npc';
+    }
+
+    // 靠近采集/掉落：先尝试交互，否则移动
+    const nearG = findNearestGatherable(game.gatherables, world.x, world.y, 18);
+    if (nearG && dist(game.player.getCenter().x, game.player.getCenter().y, nearG.x, nearG.y) < 28) {
+      clearWalk();
+      interact();
+      return 'npc';
+    }
+
+    // 空白处 → 寻路移动
+    setWalkTo(world.x, world.y);
+    return 'world';
   }
 
   function handleInvTap(x, y) {
@@ -725,6 +780,36 @@ function createGame(screen) {
         return;
       }
     }
+
+    if (ui.invTab === '灵根') {
+      const ups = ui._rootUpgradeBtns || [];
+      for (let i = 0; i < ups.length; i++) {
+        if (hitTest(x, y, ups[i].x, ups[i].y, ups[i].w, ups[i].h)) {
+          const r = game.cultivation.upgradeRootAt(ups[i].i, game.inventory);
+          game.uiApi.toast(r.msg);
+          if (r.ok) game.cultivation.applyStats(game.player);
+          return;
+        }
+      }
+      const rootItems = ui._rootItemBtns || [];
+      for (let i = 0; i < rootItems.length; i++) {
+        if (hitTest(x, y, rootItems[i].x, rootItems[i].y, rootItems[i].w, rootItems[i].h)) {
+          const id = rootItems[i].id;
+          if (id === 'xisui_pill' || id === 'root_awaken_pill') {
+            if (game.inventory.useItem(id, game.player, game.cultivation, game.particles)) {
+              game.uiApi.toast(ITEM_DEFS[id].name + '已使用');
+            } else {
+              game.uiApi.toast(game.inventory.has(id) ? '无法使用' : '数量不足');
+            }
+          } else {
+            game.uiApi.toast((ITEM_DEFS[id] || {}).name + ' ×' + game.inventory.count(id) + '（点进阶消耗）');
+          }
+          return;
+        }
+      }
+      return;
+    }
+
     const cells = ui._invCells || [];
     for (let i = 0; i < cells.length; i++) {
       if (hitTest(x, y, cells[i].x, cells[i].y, cells[i].w, cells[i].h)) {
@@ -801,7 +886,7 @@ function createGame(screen) {
     game.transition.update(dt);
     game.quests.updateBanners(dt);
 
-    if (game.mode === 'title' || game.mode === 'root') {
+    if (game.mode === 'title') {
       handleTitleInput();
       game.input.endFrame();
       return;
@@ -811,11 +896,9 @@ function createGame(screen) {
     if (game.cultivation.state.tribulation) {
       const move = game.input.getMoveVec();
       let mx = move.x;
-      if (game.input.state.walkTarget) {
-        // 用触摸 x 控制
-        mx = (game.input.state.uiTap ? (game.input.state.uiTap.x / screen.designW - 0.5) * 2 : mx);
+      if (game.input.state.uiTap) {
+        mx = (game.input.state.uiTap.x / screen.designW - 0.5) * 2;
       }
-      // 也可用 stick
       game.cultivation.updateTribulation(dt, mx);
       const tb = game.cultivation.state.tribulation;
       if (tb && tb.done) {
@@ -825,7 +908,6 @@ function createGame(screen) {
             game.uiApi.toast('渡劫成功！金身铸成！');
           } else {
             game.uiApi.toast(msg);
-            // 回巢
             loadRegion('nest_cave');
           }
           vibe();
@@ -841,6 +923,7 @@ function createGame(screen) {
         const t = game.input.state.uiTap;
         game.dialog.handleTap(t.x, t.y, screen.designW, screen.designH);
       }
+      clearWalk();
       game.input.endFrame();
       return;
     }
@@ -855,6 +938,7 @@ function createGame(screen) {
       if (game.quests.state.minigame) {
         // still draw world underneath optionally - skip world update lightly
       } else {
+        clearWalk();
         game.input.endFrame();
         return;
       }
@@ -879,16 +963,40 @@ function createGame(screen) {
       return;
     }
 
-    // 移动
+    // 移动：WASD 优先并打断寻路；否则沿路径点行走
     let moveVec = game.input.getMoveVec();
-    if (!moveVec.active && game.input.state.walkTarget) {
-      const world = game.camera.screenToWorld(game.input.state.walkTarget.x, game.input.state.walkTarget.y);
+    if (moveVec.active) {
+      clearWalk();
+    } else if (game.walkPath && game.walkPath.length && game.walkPathIdx < game.walkPath.length) {
+      const wp = game.walkPath[game.walkPathIdx];
+      const pc = game.player.getCenter();
+      const dx = wp.x - pc.x;
+      const dy = wp.y - pc.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 6) {
+        game.walkPathIdx++;
+        if (game.walkPathIdx >= game.walkPath.length) {
+          clearWalk();
+          moveVec = { x: 0, y: 0, active: false };
+        } else {
+          const nwp = game.walkPath[game.walkPathIdx];
+          const ndx = nwp.x - pc.x;
+          const ndy = nwp.y - pc.y;
+          const nd = Math.sqrt(ndx * ndx + ndy * ndy) || 1;
+          moveVec = { x: ndx / nd, y: ndy / nd, active: true };
+        }
+      } else {
+        moveVec = { x: dx / d, y: dy / d, active: true };
+      }
+    } else if (game.input.state.walkTarget) {
+      // 无路径时直线兜底
+      const world = game.input.state.walkTarget;
       const pc = game.player.getCenter();
       const dx = world.x - pc.x;
       const dy = world.y - pc.y;
       const d = Math.sqrt(dx * dx + dy * dy);
       if (d < 8) {
-        game.input.clearWalkTarget();
+        clearWalk();
         moveVec = { x: 0, y: 0, active: false };
       } else {
         moveVec = { x: dx / d, y: dy / d, active: true };
@@ -907,6 +1015,7 @@ function createGame(screen) {
       game.player.update(dt, moveVec, region.map);
     } else {
       // 死亡复活
+      clearWalk();
       if (game.player.deadT > 2) {
         game.player.dead = false;
         game.player.hp = Math.floor(game.player.maxHp * 0.5);
@@ -945,6 +1054,7 @@ function createGame(screen) {
       if (res && res.attacked && !game.player.dead) {
         const dmg = game.player.takeDamage(res.damage);
         if (dmg > 0) {
+          clearWalk(); // 受击打断寻路
           game.particles.floatText(game.player.x, game.player.y - 14, '-' + dmg, '#e74c3c');
           game.camera.shake(4, 0.2);
           vibe();
@@ -993,8 +1103,10 @@ function createGame(screen) {
     game._interactHint = null;
     const nearG = findNearestGatherable(game.gatherables, pc.x, pc.y, 24);
     const nearN = findNearestNpc(game.npcs, pc.x, pc.y, 28);
+    const nearOpp = findNearbyOpportunity(game.opportunities || [], pc.x, pc.y, 28, game.cultivation);
     const portal = region.map.getPortalAt(pc.x, pc.y);
     if (nearG) game._interactHint = '点击采集 ' + (ITEM_DEFS[nearG.itemId] || {}).name;
+    else if (nearOpp) game._interactHint = '点击触发机缘 · ' + nearOpp.name;
     else if (nearN) game._interactHint = '点击对话 ' + nearN.def.name;
     else if (portal) game._interactHint = '前往 ' + (portal.label || '');
 
@@ -1042,31 +1154,11 @@ function createGame(screen) {
       }
       const id = game.uiApi.hitTitle(tap.x, tap.y);
       if (id === 'new') {
-        // 随机灵根进入选择
-        game.uiApi.ui.rootChoices = ROOTS.slice().sort(() => Math.random() - 0.5);
-        game.uiApi.ui.rootPick = 0;
-        game.mode = 'root';
+        startNewGame();
       } else if (id === 'continue') {
         if (!continueGame()) game.uiApi.toast('没有存档');
       } else if (id === 'settings') {
         game.uiApi.ui.panel = 'settings';
-      }
-    } else if (game.mode === 'root') {
-      const ui = game.uiApi.ui;
-      const btns = ui._rootBtns || [];
-      for (let i = 0; i < btns.length; i++) {
-        if (hitTest(tap.x, tap.y, btns[i].x, btns[i].y, btns[i].w, btns[i].h)) {
-          ui.rootPick = btns[i].i;
-          return;
-        }
-      }
-      if (ui._rootReroll && hitTest(tap.x, tap.y, ui._rootReroll.x, ui._rootReroll.y, ui._rootReroll.w, ui._rootReroll.h)) {
-        ui.rootChoices = ROOTS.slice().sort(() => Math.random() - 0.5);
-        return;
-      }
-      if (ui._rootOk && hitTest(tap.x, tap.y, ui._rootOk.x, ui._rootOk.y, ui._rootOk.w, ui._rootOk.h)) {
-        const root = ui.rootChoices[ui.rootPick];
-        startNewGame(root);
       }
     }
   }
@@ -1083,12 +1175,6 @@ function createGame(screen) {
       if (game.uiApi.ui.panel === 'settings') {
         game.uiApi.drawSettings(ctx, game.settings);
       }
-      screen.endFrame();
-      return;
-    }
-
-    if (game.mode === 'root') {
-      game.uiApi.drawRootSelect(ctx, game.uiApi.ui.rootChoices || ROOTS);
       screen.endFrame();
       return;
     }
@@ -1118,6 +1204,11 @@ function createGame(screen) {
       // 采集物
       for (let i = 0; i < game.gatherables.length; i++) {
         drawGatherable(ctx, game.gatherables[i], game.camera, game.time);
+      }
+      // 机缘点
+      for (let i = 0; i < (game.opportunities || []).length; i++) {
+        const opp = game.opportunities[i];
+        drawOpportunity(ctx, opp, game.camera, game.time, game.cultivation.hasOpportunity(opp.id));
       }
       // 掉落
       for (let i = 0; i < game.drops.length; i++) {
@@ -1152,7 +1243,7 @@ function createGame(screen) {
     // HUD
     game.uiApi.drawHUD(ctx, game);
     game.uiApi.drawDefend(ctx, game.quests.state.defend);
-    game.input.drawStick(ctx);
+    game.uiApi.drawWalkMarker(ctx, game);
     game.particles.drawUI(ctx);
 
     // 面板

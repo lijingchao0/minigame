@@ -71,7 +71,10 @@ function createBorderlands() {
     npcs,
     enemies,
     danger: true,
-    needUnlock: true
+    needUnlock: true,
+    opportunities: [
+      { id: 'border_ruin', name: '遗迹传承', x: 42 * TILE, y: 28 * TILE, color: '#e67e22' }
+    ]
   };
 }
 

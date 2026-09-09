@@ -51,11 +51,11 @@ function createCombat() {
   function dropLoot(enemy, drops) {
     if (!enemy.dead) return;
     const table = {
-      spider: [['silk', 0.6], ['berry', 0.3]],
-      wasp: [['spirit_herb', 0.4], ['dew_drop', 0.3]],
-      anteater: [['spirit_stone', 0.5], ['hp_pill', 0.3]],
-      shadow_scorpion: [['glow_mushroom', 0.4], ['spirit_stone', 0.4], ['mp_pill', 0.2]],
-      heart_demon: [['spirit_water', 0.8], ['xp_pill', 0.5], ['tribulation_herb', 0.4]]
+      spider: [['silk', 0.6], ['berry', 0.3], ['ling_sui', 0.08]],
+      wasp: [['spirit_herb', 0.4], ['dew_drop', 0.3], ['ling_sui', 0.1]],
+      anteater: [['spirit_stone', 0.5], ['hp_pill', 0.3], ['yao_dan', 0.28], ['ling_sui', 0.4]],
+      shadow_scorpion: [['glow_mushroom', 0.4], ['spirit_stone', 0.4], ['mp_pill', 0.2], ['ling_sui', 0.35], ['yao_dan', 0.18]],
+      heart_demon: [['spirit_water', 0.8], ['xp_pill', 0.5], ['tribulation_herb', 0.4], ['yao_dan', 0.65], ['ling_sui', 0.8], ['xisui_pill', 0.45]]
     };
     const t = table[enemy.type] || [];
     for (let i = 0; i < t.length; i++) {

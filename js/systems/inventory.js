@@ -74,6 +74,28 @@ function createInventory() {
       cultivation.addXp(def.value, player, particles);
       return true;
     }
+    if (def.use === 'root_xisui') {
+      const r = cultivation.applyXisui(-1);
+      if (!r.ok) {
+        if (particles) particles.floatText(player.x, player.y - 14, r.msg, '#e74c3c');
+        return false;
+      }
+      remove(id, 1);
+      cultivation.applyStats(player);
+      if (particles) particles.floatText(player.x, player.y - 14, r.msg, '#f1c40f');
+      return true;
+    }
+    if (def.use === 'root_awaken') {
+      const r = cultivation.awakenNewRoot();
+      if (!r.ok) {
+        if (particles) particles.floatText(player.x, player.y - 14, r.msg, '#e74c3c');
+        return false;
+      }
+      remove(id, 1);
+      cultivation.applyStats(player);
+      if (particles) particles.floatText(player.x, player.y - 14, r.msg, '#9b59b6');
+      return true;
+    }
     if (def.equip) {
       // 装备
       const slot = def.equip;

@@ -16,6 +16,11 @@ const ITEM_DEFS = {
   hp_pill: { name: '回血丹', icon: 'pill_r', cat: '丹药', desc: '恢复 40 点生命。', sell: 15, use: 'heal', value: 40 },
   mp_pill: { name: '回灵丹', icon: 'pill_b', cat: '丹药', desc: '恢复 30 点灵力。', sell: 15, use: 'mp', value: 30 },
   xp_pill: { name: '聚气丹', icon: 'pill_g', cat: '丹药', desc: '增加 30 点修为。', sell: 25, use: 'xp', value: 30 },
+  // 灵根培养
+  xisui_pill: { name: '洗髓丹', icon: 'pill_gold', cat: '丹药', desc: '提升一根灵根品阶（优先最低）。', sell: 80, use: 'root_xisui' },
+  root_awaken_pill: { name: '灵根觉醒丹', icon: 'pill_purple', cat: '丹药', desc: '点亮一个空余灵根位（最多3）。', sell: 120, use: 'root_awaken' },
+  yao_dan: { name: '妖丹', icon: 'yao_dan', cat: '材料', desc: '高阶妖兽内丹，用于灵根进阶。', sell: 35 },
+  ling_sui: { name: '灵髓', icon: 'ling_sui', cat: '材料', desc: '凝练灵根的精华，用于灵根进阶。', sell: 20 },
   // 装备
   herb_necklace: { name: '灵草项链', icon: 'neck', cat: '装备', desc: '移速 +15%。', sell: 80, equip: 'neck', stat: 'speed', value: 0.15 },
   stone_armor: { name: '石甲片', icon: 'armor', cat: '装备', desc: '防御 +5。', sell: 100, equip: 'armor', stat: 'def', value: 5 },
@@ -86,6 +91,31 @@ function drawItemIcon(ctx, icon, x, y, size) {
     case 'pill_g':
       ctx.fillStyle = '#27ae60';
       ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 'pill_gold':
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#fff8dc';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      break;
+    case 'pill_purple':
+      ctx.fillStyle = '#9b59b6';
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e8d5ff';
+      ctx.beginPath(); ctx.arc(x - 1, y - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 'yao_dan':
+      ctx.fillStyle = '#c0392b';
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#f39c12';
+      ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+      break;
+    case 'ling_sui':
+      ctx.fillStyle = '#7ec8e3';
+      ctx.beginPath();
+      ctx.moveTo(x, y - 6); ctx.lineTo(x + 4, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 4, y);
+      ctx.closePath(); ctx.fill();
       break;
     case 'neck':
       ctx.strokeStyle = '#f1c40f';

@@ -39,6 +39,7 @@ function createPlayer(x, y) {
 
     getSpeed() {
       let s = this.speed;
+      if (this._rootSpeedMul) s *= this._rootSpeedMul;
       if (this.buffs.lingbu > 0) s *= 1.55;
       return s;
     },
@@ -61,7 +62,8 @@ function createPlayer(x, y) {
         if (this.buffs[k] <= 0) delete this.buffs[k];
       }
       // 灵力缓慢回复
-      this.mp = Math.min(this.maxMp, this.mp + 4 * dt);
+      const regen = 4 * (this._mpRegenMul || 1);
+      this.mp = Math.min(this.maxMp, this.mp + regen * dt);
 
       this.moving = moveVec.active;
       if (moveVec.active) {
@@ -105,7 +107,7 @@ function createPlayer(x, y) {
 
     takeDamage(amount) {
       if (this.dead || this.isInvincible()) return 0;
-      const dmg = Math.max(1, amount - this.def);
+      const dmg = Math.max(1, amount - this.def - (this._rootDefBonus || 0));
       this.hp -= dmg;
       this.invuln = 0.6;
       this.flash = 0.2;

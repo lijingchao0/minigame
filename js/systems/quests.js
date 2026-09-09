@@ -32,7 +32,7 @@ const MAIN_QUESTS = [
       { type: 'meditate', amount: 1, text: '在修炼室吐纳一次（按修炼按钮）' },
       { type: 'talk', npc: 'king_ant', text: '向玄尘汇报修炼心得' }
     ],
-    reward: { xp: 80, gold: 15, items: [{ id: 'xp_pill', n: 1 }], skills: ['lingbu', 'jiaqiao'], prosperity: 8 },
+    reward: { xp: 80, gold: 15, items: [{ id: 'xp_pill', n: 1 }, { id: 'xisui_pill', n: 1 }], skills: ['lingbu', 'jiaqiao'], prosperity: 8 },
     unlockNext: 'm3',
     dialogAccept: [
       '嗯……金纹在顶，灵根可塑。老夫收你为徒。',
@@ -77,7 +77,7 @@ const MAIN_QUESTS = [
       { type: 'gather', item: 'spirit_water', amount: 1, text: '取得灵泉水' },
       { type: 'talk', npc: 'king_ant', text: '将灵泉告知玄尘' }
     ],
-    reward: { xp: 140, gold: 40, items: [{ id: 'glow_mushroom', n: 3 }, { id: 'mp_pill', n: 2 }], prosperity: 20 },
+    reward: { xp: 140, gold: 40, items: [{ id: 'glow_mushroom', n: 3 }, { id: 'mp_pill', n: 2 }, { id: 'ling_sui', n: 2 }], prosperity: 20 },
     unlockNext: 'm5',
     unlockRegion: 'mushroom_forest',
     dialogAccept: [
@@ -100,7 +100,7 @@ const MAIN_QUESTS = [
       { type: 'kill', enemy: 'anteater', amount: 2, text: '击退 2 只食蚁兽' },
       { type: 'talk', npc: 'soldier_captain', text: '向队长复命' }
     ],
-    reward: { xp: 180, gold: 60, items: [{ id: 'stone_armor', n: 1 }], prosperity: 35 },
+    reward: { xp: 180, gold: 60, items: [{ id: 'stone_armor', n: 1 }, { id: 'yao_dan', n: 2 }], prosperity: 35 },
     unlockNext: 'm6',
     unlockRegion: 'borderlands',
     dialogAccept: [
@@ -124,7 +124,7 @@ const MAIN_QUESTS = [
       { type: 'kill', enemy: 'heart_demon', amount: 1, text: '在修炼室引出并击败心魔' },
       { type: 'talk', npc: 'king_ant', text: '向师父复命' }
     ],
-    reward: { xp: 220, gold: 80, items: [{ id: 'xp_pill', n: 3 }], prosperity: 30 },
+    reward: { xp: 220, gold: 80, items: [{ id: 'xp_pill', n: 3 }, { id: 'root_awaken_pill', n: 1 }], prosperity: 30 },
     unlockNext: 'm7',
     dialogAccept: [
       '大境界突破必经雷劫，亦须先斩心魔。',
@@ -229,7 +229,7 @@ const SIDE_QUESTS = [
       { type: 'kill', enemy: 'spider', amount: 4, text: '击杀 4 只草蛛' },
       { type: 'talk', npc: 'soldier_captain', text: '复命' }
     ],
-    reward: { xp: 70, gold: 30, prosperity: 10 },
+    reward: { xp: 70, gold: 30, items: [{ id: 'yao_dan', n: 1 }, { id: 'ling_sui', n: 1 }], prosperity: 10 },
     dialogAccept: ['瓢虫那事我听说了。蜘蛛成灾，给我清掉四只！'],
     dialogComplete: ['干得漂亮。边境还会更乱，保持警惕。']
   },
@@ -314,7 +314,7 @@ const SIDE_QUESTS = [
       { type: 'meditate', amount: 3, text: '完成 3 次吐纳' },
       { type: 'talk', npc: 'king_ant', text: '交差' }
     ],
-    reward: { xp: 60, gold: 10, items: [{ id: 'xp_pill', n: 1 }] },
+    reward: { xp: 60, gold: 10, items: [{ id: 'xp_pill', n: 1 }, { id: 'ling_sui', n: 1 }] },
     dialogAccept: ['基础不牢，地动山摇。再吐纳三次，来见我。'],
     dialogComplete: ['心静则灵聚。这颗聚气丹给你。']
   },

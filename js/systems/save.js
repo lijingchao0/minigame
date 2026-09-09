@@ -43,7 +43,7 @@ function createSave() {
 
   function save(game) {
     const data = {
-      version: 2,
+      version: 3,
       time: Date.now(),
       player: {
         x: game.player.x,

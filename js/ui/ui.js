@@ -85,7 +85,7 @@ function createUI(screen) {
     drawText(ctx, '蚂蚁修仙', w / 2, h * 0.52, {
       align: 'center', font: 'bold 42px "PingFang SC","KaiTi",serif', color: '#f5e6c8', shadow: true
     });
-    drawText(ctx, 'v2.0 · 灵智初开', w / 2, h * 0.52 + 48, {
+    drawText(ctx, 'v2.1 · 灵智初开', w / 2, h * 0.52 + 48, {
       align: 'center', font: '14px "PingFang SC",sans-serif', color: COLORS.gold
     });
 
@@ -104,7 +104,7 @@ function createUI(screen) {
     drawButton(ctx, bx, by, bw, bh, '设  置');
     ui._titleBtns.push({ id: 'settings', x: bx, y: by, w: bw, h: bh });
 
-    drawText(ctx, '点触屏幕 · 虚拟摇杆移动', w / 2, h - 36, {
+    drawText(ctx, '点触地图移动 · WASD', w / 2, h - 36, {
       align: 'center', font: '11px sans-serif', color: COLORS.textDim
     });
   }
@@ -116,49 +116,6 @@ function createUI(screen) {
       if (hitTest(x, y, b.x, b.y, b.w, b.h)) return b.id;
     }
     return null;
-  }
-
-  // —— 灵根选择 ——
-  function drawRootSelect(ctx, roots) {
-    const w = screen.designW;
-    const h = screen.designH;
-    ctx.fillStyle = 'rgba(10,8,6,0.92)';
-    ctx.fillRect(0, 0, w, h);
-    drawText(ctx, '觉醒灵根', w / 2, 60, {
-      align: 'center', font: 'bold 26px "PingFang SC",serif', color: COLORS.gold
-    });
-    drawText(ctx, '灵根影响修炼速度与功法亲和', w / 2, 95, {
-      align: 'center', font: '12px sans-serif', color: COLORS.textDim
-    });
-
-    ui._rootBtns = [];
-    const cols = 4;
-    const bw = 70;
-    const gap = 12;
-    const startX = (w - cols * bw - (cols - 1) * gap) / 2;
-    for (let i = 0; i < roots.length; i++) {
-      const r = roots[i];
-      const col = i % cols;
-      const row = (i / cols) | 0;
-      const x = startX + col * (bw + gap);
-      const y = 130 + row * 90;
-      const selected = ui.rootPick === i;
-      drawPanel(ctx, x, y, bw, 70, { gold: selected, radius: 8 });
-      ctx.fillStyle = r.color;
-      ctx.beginPath();
-      ctx.arc(x + bw / 2, y + 28, 14, 0, Math.PI * 2);
-      ctx.fill();
-      drawText(ctx, r.name + '灵根', x + bw / 2, y + 48, {
-        align: 'center', font: '12px sans-serif', color: COLORS.text
-      });
-      ui._rootBtns.push({ i, x, y, w: bw, h: 70 });
-    }
-
-    const okx = (w - 160) / 2;
-    drawButton(ctx, okx, h - 120, 160, 40, '以此灵根入世');
-    drawButton(ctx, okx, h - 70, 160, 36, '重新随机');
-    ui._rootOk = { x: okx, y: h - 120, w: 160, h: 40 };
-    ui._rootReroll = { x: okx, y: h - 70, w: 160, h: 36 };
   }
 
   // —— 主 HUD ——
@@ -181,7 +138,7 @@ function createUI(screen) {
     ctx.fill();
 
     drawText(ctx, cul.realmName(), 48, 14, { font: 'bold 11px sans-serif', color: COLORS.gold });
-    drawText(ctx, game.kingdom.titleName(), 48, 28, { font: '10px sans-serif', color: COLORS.textDim });
+    drawText(ctx, cul.rootsLabel(), 48, 28, { font: '9px sans-serif', color: COLORS.textDim });
     drawBar(ctx, 48, 44, 100, 8, p.hp / p.maxHp, COLORS.hp);
     drawBar(ctx, 48, 56, 100, 8, p.mp / p.maxMp, COLORS.mp);
     drawBar(ctx, 48, 68, 100, 6, cul.state.xp / cul.xpNeeded(), COLORS.xp);
@@ -401,55 +358,163 @@ function createUI(screen) {
     drawText(ctx, '背 包', px + 16, py + 12, { font: 'bold 16px serif', color: COLORS.gold });
     drawText(ctx, '金币 ' + game.inventory.state.gold, px + pw - 90, py + 14, { font: '12px sans-serif' });
 
-    const tabs = ['材料', '装备', '丹药', '任务品'];
+    const tabs = ['材料', '装备', '丹药', '任务品', '灵根'];
     ui._invTabs = [];
     for (let i = 0; i < tabs.length; i++) {
-      const tx = px + 12 + i * 70;
+      const tx = px + 8 + i * 58;
       const active = ui.invTab === tabs[i];
-      drawButton(ctx, tx, py + 36, 64, 26, tabs[i], { pressed: active });
-      ui._invTabs.push({ tab: tabs[i], x: tx, y: py + 36, w: 64, h: 26 });
+      drawButton(ctx, tx, py + 36, 54, 26, tabs[i], { pressed: active });
+      ui._invTabs.push({ tab: tabs[i], x: tx, y: py + 36, w: 54, h: 26 });
     }
 
-    const items = game.inventory.byCategory(ui.invTab);
-    const cols = 5;
-    const cell = 48;
-    const startY = py + 72;
-    ui._invCells = [];
-    for (let i = 0; i < items.length; i++) {
-      const col = i % cols;
-      const row = (i / cols) | 0;
-      const cx = px + 16 + col * (cell + 8);
-      const cy = startY + row * (cell + 8);
-      drawPanel(ctx, cx, cy, cell, cell, { radius: 6, borderColor: ui.selectedSlot === i ? COLORS.gold : COLORS.panelBorder });
-      const def = ITEM_DEFS[items[i].id];
-      if (def) drawItemIcon(ctx, def.icon, cx + cell / 2, cy + cell / 2 - 4, 16);
-      drawText(ctx, '×' + items[i].amount, cx + cell - 4, cy + cell - 14, {
-        align: 'right', font: '10px sans-serif'
-      });
-      ui._invCells.push({ i, item: items[i], x: cx, y: cy, w: cell, h: cell });
-    }
+    ui._rootUpgradeBtns = [];
+    ui._rootItemBtns = [];
 
-    // 详情
-    if (ui.selectedSlot >= 0 && items[ui.selectedSlot]) {
-      const it = items[ui.selectedSlot];
-      const def = ITEM_DEFS[it.id];
-      const dy = py + ph - 100;
-      drawPanel(ctx, px + 12, dy, pw - 24, 88, { radius: 6 });
-      if (def) {
-        drawText(ctx, def.name, px + 24, dy + 10, { font: 'bold 13px sans-serif', color: COLORS.gold });
-        drawText(ctx, def.desc, px + 24, dy + 30, { font: '11px sans-serif', color: COLORS.textDim });
-        drawButton(ctx, px + 24, dy + 52, 80, 28, def.use || def.equip ? '使用' : '出售');
-        ui._invUse = { x: px + 24, y: dy + 52, w: 80, h: 28, item: it };
-        drawButton(ctx, px + 114, dy + 52, 80, 28, '出售');
-        ui._invSell = { x: px + 114, y: dy + 52, w: 80, h: 28, item: it };
-      }
+    if (ui.invTab === '灵根') {
+      drawRootPanel(ctx, game, px, py, pw, ph);
     } else {
-      ui._invUse = null;
-      ui._invSell = null;
+      const items = game.inventory.byCategory(ui.invTab);
+      const cols = 5;
+      const cell = 48;
+      const startY = py + 72;
+      ui._invCells = [];
+      for (let i = 0; i < items.length; i++) {
+        const col = i % cols;
+        const row = (i / cols) | 0;
+        const cx = px + 16 + col * (cell + 8);
+        const cy = startY + row * (cell + 8);
+        drawPanel(ctx, cx, cy, cell, cell, { radius: 6, borderColor: ui.selectedSlot === i ? COLORS.gold : COLORS.panelBorder });
+        const def = ITEM_DEFS[items[i].id];
+        if (def) drawItemIcon(ctx, def.icon, cx + cell / 2, cy + cell / 2 - 4, 16);
+        drawText(ctx, '×' + items[i].amount, cx + cell - 4, cy + cell - 14, {
+          align: 'right', font: '10px sans-serif'
+        });
+        ui._invCells.push({ i, item: items[i], x: cx, y: cy, w: cell, h: cell });
+      }
+
+      // 详情
+      if (ui.selectedSlot >= 0 && items[ui.selectedSlot]) {
+        const it = items[ui.selectedSlot];
+        const def = ITEM_DEFS[it.id];
+        const dy = py + ph - 100;
+        drawPanel(ctx, px + 12, dy, pw - 24, 88, { radius: 6 });
+        if (def) {
+          drawText(ctx, def.name, px + 24, dy + 10, { font: 'bold 13px sans-serif', color: COLORS.gold });
+          drawText(ctx, def.desc, px + 24, dy + 30, { font: '11px sans-serif', color: COLORS.textDim });
+          drawButton(ctx, px + 24, dy + 52, 80, 28, def.use || def.equip ? '使用' : '出售');
+          ui._invUse = { x: px + 24, y: dy + 52, w: 80, h: 28, item: it };
+          drawButton(ctx, px + 114, dy + 52, 80, 28, '出售');
+          ui._invSell = { x: px + 114, y: dy + 52, w: 80, h: 28, item: it };
+        }
+      } else {
+        ui._invUse = null;
+        ui._invSell = null;
+      }
     }
 
     drawButton(ctx, px + pw - 70, py + 8, 54, 28, '关闭');
     ui._invClose = { x: px + pw - 70, y: py + 8, w: 54, h: 28 };
+  }
+
+  function drawRootPanel(ctx, game, px, py, pw, ph) {
+    const cul = game.cultivation;
+    const roots = cul.state.roots || [];
+    ui._invCells = [];
+    ui._invUse = null;
+    ui._invSell = null;
+
+    drawText(ctx, '修炼系数 ×' + cul.cultivateMul().toFixed(2) + '（单灵根纯净加成更高）', px + 16, py + 70, {
+      font: '11px sans-serif', color: COLORS.textDim
+    });
+
+    let y = py + 92;
+    for (let i = 0; i < roots.length; i++) {
+      const r = roots[i];
+      const def = cul.getRootDef(r.typeId);
+      const q = cul.getQuality(r.quality);
+      drawPanel(ctx, px + 12, y, pw - 24, 56, { radius: 6, borderColor: def.color });
+      ctx.fillStyle = def.color;
+      ctx.beginPath();
+      ctx.arc(px + 36, y + 28, 12, 0, Math.PI * 2);
+      ctx.fill();
+      drawText(ctx, q.name + def.name + '灵根', px + 56, y + 10, {
+        font: 'bold 13px sans-serif', color: COLORS.gold
+      });
+      let desc = '品阶加成 ×' + q.mul.toFixed(2);
+      if (r.quality === 'bianyi' && def.mutation) {
+        desc = def.mutation.name + '：' + def.mutation.desc;
+      }
+      drawText(ctx, desc, px + 56, y + 30, { font: '11px sans-serif', color: COLORS.textDim });
+
+      const next = cul.nextQualityId(r.quality);
+      if (next) {
+        const cost = cul.UPGRADE_COST[r.quality];
+        const label = '进阶';
+        drawButton(ctx, px + pw - 90, y + 14, 60, 28, label);
+        ui._rootUpgradeBtns.push({ i, x: px + pw - 90, y: y + 14, w: 60, h: 28, cost });
+      } else {
+        drawText(ctx, '已满', px + pw - 60, y + 22, { font: '11px sans-serif', color: COLORS.gold });
+      }
+      y += 64;
+    }
+    while (roots.length < 3 && y < py + ph - 120) {
+      drawPanel(ctx, px + 12, y, pw - 24, 40, { radius: 6 });
+      drawText(ctx, '空余灵根位（需觉醒丹点亮）', px + 24, y + 12, {
+        font: '12px sans-serif', color: COLORS.textDim
+      });
+      y += 48;
+      break;
+    }
+
+    // 培养道具快捷使用
+    y = Math.max(y, py + ph - 110);
+    drawPanel(ctx, px + 12, y, pw - 24, 96, { radius: 6 });
+    drawText(ctx, '培养道具', px + 24, y + 8, { font: 'bold 12px sans-serif', color: COLORS.gold });
+    const pills = [
+      { id: 'xisui_pill', label: '洗髓' },
+      { id: 'root_awaken_pill', label: '觉醒' },
+      { id: 'ling_sui', label: '灵髓' },
+      { id: 'yao_dan', label: '妖丹' }
+    ];
+    ui._rootItemBtns = [];
+    for (let i = 0; i < pills.length; i++) {
+      const n = game.inventory.count(pills[i].id);
+      const bx = px + 20 + i * 72;
+      const by = y + 36;
+      drawButton(ctx, bx, by, 64, 44, pills[i].label);
+      drawText(ctx, '×' + n, bx + 32, by + 26, { align: 'center', font: '10px sans-serif', color: COLORS.textDim });
+      ui._rootItemBtns.push({ id: pills[i].id, x: bx, y: by, w: 64, h: 44, usable: n > 0 && (pills[i].id === 'xisui_pill' || pills[i].id === 'root_awaken_pill') });
+    }
+  }
+
+  /** 点击行走目标标记 */
+  function drawWalkMarker(ctx, game) {
+    const wt = game.input && game.input.state.walkTarget;
+    if (!wt || !game.camera) return;
+    const sp = game.camera.worldToScreen(wt.x, wt.y);
+    const t = game.time || 0;
+    const pulse = 8 + Math.sin(t * 6) * 2;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(241,196,15,0.85)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#f1c40f';
+    ctx.beginPath();
+    ctx.arc(sp.x, sp.y, pulse * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    // 小旗
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#d4a017';
+    ctx.fillRect(sp.x - 1, sp.y - pulse - 10, 2, 12);
+    ctx.beginPath();
+    ctx.moveTo(sp.x + 1, sp.y - pulse - 10);
+    ctx.lineTo(sp.x + 9, sp.y - pulse - 6);
+    ctx.lineTo(sp.x + 1, sp.y - pulse - 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   // —— 任务日志 ——
@@ -661,9 +726,9 @@ function createUI(screen) {
 
   return {
     ui, toast, update, showBreakthrough,
-    drawTitle, hitTitle, drawRootSelect,
+    drawTitle, hitTitle,
     drawHUD, drawDialog, drawInventory, drawQuestLog, drawShop, drawSettings,
-    drawTribulation, drawFireflyGame, drawDefend
+    drawTribulation, drawFireflyGame, drawDefend, drawWalkMarker
   };
 }
 
