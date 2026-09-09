@@ -439,13 +439,27 @@ function createQuestSystem() {
     return true;
   }
 
-  function accept(id, notify, game) {
+  function isMain(id) {
+    return !!(id && id.charAt(0) === 'm');
+  }
+
+  /**
+   * @param opts.auto 自动接取（主线）：保留首步 talk，横幅「主线推进」
+   * @param opts.keepFirstTalk 强制保留首步对话
+   */
+  function accept(id, notify, game, opts) {
     const q = getDef(id);
     if (!q || !canAccept(q)) return false;
+    opts = opts || {};
     state.active[id] = { step: 0, progress: {}, started: Date.now() };
-    if (!state.tracking) state.tracking = id;
-    // 接取后若首步为 talk 且 giver 即当前，自动推进到下一步
-    if (q.steps[0] && q.steps[0].type === 'talk' && q.steps[0].npc === q.giver) {
+
+    // 主线出现时强制切回主线追踪；否则空追踪时接上
+    if (isMain(id) || !state.tracking) state.tracking = id;
+
+    // NPC 对话接取：首步 talk 与 giver 相同则视为已推进；自动接取则保留
+    const skipFirstTalk = !opts.auto && !opts.keepFirstTalk &&
+      q.steps[0] && q.steps[0].type === 'talk' && q.steps[0].npc === q.giver;
+    if (skipFirstTalk) {
       state.active[id].step = 1;
     }
     // 蜂蚁通邮：接取后发放手谕道具
@@ -466,8 +480,24 @@ function createQuestSystem() {
         } else break;
       }
     }
-    if (notify) state.banners.push({ text: '新任务：' + q.name, t: 0, life: 3 });
+    if (notify) {
+      const prefix = opts.auto || isMain(id) ? '主线推进：' : '新任务：';
+      state.banners.push({ text: prefix + q.name, t: 0, life: 3.2 });
+    }
     return true;
+  }
+
+  /** 自动接取下一条主线（开局 / 完成后） */
+  function autoAcceptMain(game, notify) {
+    for (let i = 0; i < MAIN_QUESTS.length; i++) {
+      const q = MAIN_QUESTS[i];
+      if (canAccept(q)) {
+        accept(q.id, notify !== false, game, { auto: true, keepFirstTalk: true });
+        if (q.unlockRegion && game && game.regions) game.regions.unlock(q.unlockRegion);
+        return q.id;
+      }
+    }
+    return null;
   }
 
   function currentStep(id) {
@@ -504,7 +534,14 @@ function createQuestSystem() {
       }
     }
     if (r.skills) {
-      for (let i = 0; i < r.skills.length; i++) game.cultivation.learnSkill(r.skills[i]);
+      for (let i = 0; i < r.skills.length; i++) {
+        game.cultivation.learnSkill(r.skills[i]);
+        const sk = game.cultivation.SKILLS.find((s) => s.id === r.skills[i]);
+        state.banners.push({
+          text: '学会技能：' + (sk ? sk.name : r.skills[i]),
+          t: 0, life: 3
+        });
+      }
     }
     if (r.prosperity) {
       game.kingdom.addProsperity(r.prosperity, (info) => {
@@ -514,9 +551,6 @@ function createQuestSystem() {
     game.kingdom.updateTitle(state.mainDone);
 
     if (q.unlockRegion) game.regions.unlock(q.unlockRegion);
-    if (q.unlockNext) {
-      // 不自动接，但标记可接
-    }
     if (q.unlockSide) {
       // 侧线解锁仅作 requireSide 条件
     }
@@ -529,6 +563,15 @@ function createQuestSystem() {
       state.tracking = Object.keys(state.active)[0] || null;
     }
     if (notify) state.banners.push({ text: '任务完成：' + q.name, t: 0, life: 3 });
+
+    // 主线完成 → 自动接下一条
+    if (isMain(id) && q.unlockNext && canAccept(getDef(q.unlockNext))) {
+      accept(q.unlockNext, true, game, { auto: true, keepFirstTalk: true });
+      const nq = getDef(q.unlockNext);
+      if (nq && nq.unlockRegion) game.regions.unlock(nq.unlockRegion);
+    } else if (isMain(id)) {
+      autoAcceptMain(game, true);
+    }
   }
 
   /** 对话推进 talk / deliver 步骤 */
@@ -682,19 +725,21 @@ function createQuestSystem() {
       if (q && q.giver === npcId && (step.type === 'minigame' || step.type === 'defend' || step.type === 'escort')) return '?';
       if (q && q.giver === npcId) return '…';
     }
-    // 可接 !
-    for (const q of allDefs()) {
+    // 可接 ! —— 主线已自动接取，仅支线显示接取叹号
+    for (const q of SIDE_QUESTS) {
       if (q.giver === npcId && canAccept(q)) return '!';
     }
     return null;
   }
 
   function trackingInfo(game) {
-    if (!state.tracking || !state.active[state.tracking]) {
-      // 优先主线进行中
-      const keys = Object.keys(state.active);
+    // 有主线进行中时优先追踪主线
+    const keys = Object.keys(state.active);
+    const main = keys.find((k) => isMain(k));
+    if (main && (!state.tracking || !state.active[state.tracking] || !isMain(state.tracking))) {
+      state.tracking = main;
+    } else if (!state.tracking || !state.active[state.tracking]) {
       if (!keys.length) return null;
-      const main = keys.find((k) => k.charAt(0) === 'm');
       state.tracking = main || keys[0];
     }
     const id = state.tracking;
@@ -966,17 +1011,22 @@ function createQuestSystem() {
     state.tracking = data.tracking || null;
   }
 
-  // 开局自动可接 m1
-  function bootstrap() {
-    // m1 可被 scout 接取
+  /** 开局自动接取第一条主线 */
+  function bootstrap(game) {
+    autoAcceptMain(game, true);
+  }
+
+  /** 主线不可放弃 */
+  function canAbandon(id) {
+    return !isMain(id);
   }
 
   return {
     state, MAIN_QUESTS, SIDE_QUESTS,
-    getDef, allDefs, canAccept, accept, currentStep, advanceStep, complete,
+    getDef, allDefs, canAccept, accept, autoAcceptMain, currentStep, advanceStep, complete,
     onTalk, onGather, onKill, onVisit, onMeditate, onShopBuy, resolveChoice,
     getQuestIcon, trackingInfo, getQuestTarget, resolveQuestTarget,
-    updateBanners, serialize, deserialize, bootstrap,
+    updateBanners, serialize, deserialize, bootstrap, canAbandon, isMain,
     isCompleted, isActive, NPC_HOME
   };
 }

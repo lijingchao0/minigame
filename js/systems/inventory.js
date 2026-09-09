@@ -8,7 +8,7 @@ function createInventory() {
     slots: [], // {id, amount}
     capacity: 30,
     gold: 20,
-    equip: { neck: null, armor: null }
+    equip: { neck: null, armor: null, weapon: null }
   };
 
   function count(id) {
@@ -116,12 +116,14 @@ function createInventory() {
   function _equipStat(player, def) {
     if (def.stat === 'speed') player.speed *= (1 + def.value);
     if (def.stat === 'def') player.def += def.value;
+    if (def.stat === 'atk') player.atk += def.value;
   }
 
   function _unequipStat(player, def) {
     if (!def) return;
     if (def.stat === 'speed') player.speed /= (1 + def.value);
     if (def.stat === 'def') player.def -= def.value;
+    if (def.stat === 'atk') player.atk -= def.value;
   }
 
   function serialize() {
@@ -136,10 +138,12 @@ function createInventory() {
     if (!data) return;
     state.slots = (data.slots || []).map((s) => ({ id: s.id, amount: s.amount }));
     state.gold = data.gold != null ? data.gold : 20;
-    state.equip = data.equip || { neck: null, armor: null };
+    state.equip = data.equip || { neck: null, armor: null, weapon: null };
+    if (!state.equip.weapon) state.equip.weapon = null;
     // 重新应用装备属性
     if (state.equip.neck && ITEM_DEFS[state.equip.neck]) _equipStat(player, ITEM_DEFS[state.equip.neck]);
     if (state.equip.armor && ITEM_DEFS[state.equip.armor]) _equipStat(player, ITEM_DEFS[state.equip.armor]);
+    if (state.equip.weapon && ITEM_DEFS[state.equip.weapon]) _equipStat(player, ITEM_DEFS[state.equip.weapon]);
   }
 
   return { state, count, add, remove, has, byCategory, useItem, serialize, deserialize, ITEM_DEFS };

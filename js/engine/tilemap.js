@@ -1,7 +1,7 @@
 /**
  * 瓦片地图 — 图层 / 碰撞 / 视锥渲染 / 装饰
  */
-const { TILE, COLORS, noise2, seededRand, drawShadow } = require('../pix.js');
+const { TILE, noise2, seededRand, drawShadow } = require('../pix.js');
 
 // 瓦片类型
 const T = {
@@ -101,60 +101,94 @@ function createTilemap(cols, rows, seed) {
     return null;
   }
 
-  // —— 渲染 ——
+  // —— 渲染：同种地皮统一基色 + 极弱区域明暗（3%~5%），消除马赛克斑块 ——
+  const TILE_BASE = {
+    [T.GRASS]: [79, 154, 72],
+    [T.GRASS2]: [74, 148, 68],
+    [T.DIRT]: [160, 122, 40],
+    [T.STONE]: [110, 110, 110],
+    [T.WATER]: [58, 126, 174],
+    [T.SAND]: [194, 178, 128],
+    [T.NEST_FLOOR]: [100, 74, 58],
+    [T.NEST_WALL]: [58, 40, 24],
+    [T.MUSHROOM_FLOOR]: [66, 52, 82],
+    [T.DARK_GRASS]: [42, 90, 42],
+    [T.PATH]: [176, 144, 80],
+    [T.FLOWER_BED]: [90, 154, 72],
+    [T.DEW]: [106, 172, 200],
+    [T.VOID]: [34, 34, 34]
+  };
+
+  function shadeRgb(rgb, mul) {
+    return 'rgb(' +
+      Math.max(0, Math.min(255, (rgb[0] * mul) | 0)) + ',' +
+      Math.max(0, Math.min(255, (rgb[1] * mul) | 0)) + ',' +
+      Math.max(0, Math.min(255, (rgb[2] * mul) | 0)) + ')';
+  }
+
+  /** 低频区域明暗：同区域平滑，对比度约 ±4% */
+  function regionShade(tx, ty) {
+    const n = noise2(tx * 0.045, ty * 0.045);
+    return 0.96 + n * 0.08; // 0.96~1.04
+  }
+
   function tileColor(t, tx, ty) {
-    const n = noise2(tx * 0.37, ty * 0.41);
-    switch (t) {
-      case T.GRASS: return COLORS.grass[(n * COLORS.grass.length) | 0];
-      case T.GRASS2: return COLORS.grass[((n * 3 + 1) | 0) % COLORS.grass.length];
-      case T.DIRT: return COLORS.dirt[(n * COLORS.dirt.length) | 0];
-      case T.STONE: return COLORS.stone[(n * COLORS.stone.length) | 0];
-      case T.WATER: return COLORS.water[(n * COLORS.water.length) | 0];
-      case T.SAND: return n > 0.5 ? '#c2b280' : '#b8a66a';
-      case T.NEST_FLOOR: return COLORS.nest[(n * COLORS.nest.length) | 0];
-      case T.NEST_WALL: return '#3a2818';
-      case T.MUSHROOM_FLOOR: return n > 0.5 ? '#4a3a5a' : '#3a2a4a';
-      case T.DARK_GRASS: return n > 0.5 ? '#2a5a2a' : '#245024';
-      case T.PATH: return '#b09050';
-      case T.FLOWER_BED: return '#5a9a48';
-      case T.DEW: return '#6aacc8';
-      default: return '#222';
+    const base = TILE_BASE[t] || TILE_BASE[T.VOID];
+    return shadeRgb(base, regionShade(tx, ty));
+  }
+
+  /** 邻接异种地皮时画极淡过渡边，柔化拼缝 */
+  function blendEdge(ctx, t, sx, sy, tx, ty) {
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (let i = 0; i < dirs.length; i++) {
+      const nt = get(tx + dirs[i][0], ty + dirs[i][1]);
+      if (nt === t || nt === T.VOID) continue;
+      const nb = TILE_BASE[nt];
+      if (!nb) continue;
+      ctx.fillStyle = shadeRgb(nb, regionShade(tx, ty) * 0.55);
+      ctx.globalAlpha = 0.22;
+      if (dirs[i][0] === 1) ctx.fillRect(sx + TILE - 3, sy, 3.5, TILE);
+      else if (dirs[i][0] === -1) ctx.fillRect(sx, sy, 3.5, TILE);
+      else if (dirs[i][1] === 1) ctx.fillRect(sx, sy + TILE - 3, TILE, 3.5);
+      else ctx.fillRect(sx, sy, TILE, 3.5);
+      ctx.globalAlpha = 1;
     }
   }
 
   function drawTile(ctx, t, sx, sy, tx, ty, time) {
     ctx.fillStyle = tileColor(t, tx, ty);
-    ctx.fillRect(sx, sy, TILE + 0.5, TILE + 0.5);
+    ctx.fillRect(sx, sy, TILE + 0.6, TILE + 0.6);
+    blendEdge(ctx, t, sx, sy, tx, ty);
 
-    // 细节
+    // 草叶细节：稀且极淡，避免块感
     if (t === T.GRASS || t === T.GRASS2 || t === T.DARK_GRASS) {
-      const n = noise2(tx, ty + 9);
-      if (n > 0.7) {
-        ctx.fillStyle = 'rgba(30,80,30,0.22)';
-        ctx.fillRect(sx + 4, sy + 6, 2, 5);
-        ctx.fillRect(sx + 10, sy + 4, 2, 6);
+      const n = noise2(tx * 0.9, ty * 0.9 + 9);
+      if (n > 0.88) {
+        ctx.fillStyle = 'rgba(30,80,30,0.12)';
+        ctx.fillRect(sx + 5, sy + 6, 1.5, 4);
+        ctx.fillRect(sx + 10, sy + 5, 1.5, 5);
       }
     }
     if (t === T.WATER || t === T.DEW) {
       const wave = Math.sin(time * 2 + tx * 0.5 + ty * 0.3) * 2;
-      ctx.fillStyle = 'rgba(180,220,255,0.25)';
+      ctx.fillStyle = 'rgba(180,220,255,0.18)';
       ctx.fillRect(sx + 2, sy + 6 + wave, 10, 2);
     }
     if (t === T.NEST_WALL) {
       ctx.fillStyle = '#1a1008';
       ctx.fillRect(sx, sy, TILE, 3);
-      ctx.fillStyle = 'rgba(255,200,100,0.06)';
+      ctx.fillStyle = 'rgba(255,200,100,0.05)';
       ctx.fillRect(sx + 2, sy + 4, 4, 4);
     }
     if (t === T.STONE) {
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
-      ctx.fillRect(sx + 2, sy + 2, 5, 4);
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(sx + 8, sy + 8, 4, 3);
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillRect(sx + 3, sy + 3, 4, 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillRect(sx + 8, sy + 8, 3, 2);
     }
     if (t === T.PATH) {
-      ctx.fillStyle = 'rgba(0,0,0,0.1)';
-      ctx.fillRect(sx + 3, sy + 3, 3, 3);
+      ctx.fillStyle = 'rgba(0,0,0,0.06)';
+      ctx.fillRect(sx + 4, sy + 4, 2, 2);
     }
   }
 
@@ -293,13 +327,21 @@ function createTilemap(cols, rows, seed) {
         break;
       }
       case 'portal_marker': {
-        const a = 0.4 + Math.sin(time * 4) * 0.3;
+        const a = 0.45 + Math.sin(time * 4) * 0.3;
+        const bob = Math.sin(time * 2.5) * 2;
         ctx.fillStyle = `rgba(212,160,23,${a})`;
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 8, 0, Math.PI * 2);
+        ctx.arc(sp.x, sp.y + bob, 9, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = '#d4a017';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#f5e6c8';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y + bob, 11 + Math.sin(time * 3) * 1.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = `rgba(212,160,23,${0.4 + a * 0.3})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y + bob, 14, 0, Math.PI * 2);
         ctx.stroke();
         break;
       }

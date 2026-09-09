@@ -42,8 +42,9 @@ function createSave() {
   }
 
   function save(game) {
+    const tut = game.tutorial ? game.tutorial.serialize() : { tutorialDone: true };
     const data = {
-      version: 4,
+      version: 5,
       time: Date.now(),
       player: {
         x: game.player.x,
@@ -57,13 +58,30 @@ function createSave() {
       kingdom: game.kingdom.serialize(),
       quests: game.quests.serialize(),
       daycycle: game.daycycle.serialize(),
-      unlocked: game.regions.listMeta().filter((m) => m.unlock).map((m) => m.id)
+      unlocked: game.regions.listMeta().filter((m) => m.unlock).map((m) => m.id),
+      tutorialDone: !!tut.tutorialDone
     };
     return storageSet(SAVE_KEY, data);
   }
 
   function load() {
-    return storageGet(SAVE_KEY);
+    const data = storageGet(SAVE_KEY);
+    if (!data) return null;
+    // 旧档兼容补丁
+    if (!data.version || data.version < 5) {
+      // 已完成第一章则视为教程完成
+      const mainDone = data.quests && data.quests.mainDone;
+      const m1Done = data.quests && data.quests.completed && data.quests.completed.m1;
+      if (data.tutorialDone == null) {
+        data.tutorialDone = !!(mainDone >= 1 || m1Done);
+      }
+      // 装备位补 weapon
+      if (data.inventory && data.inventory.equip && data.inventory.equip.weapon === undefined) {
+        data.inventory.equip.weapon = null;
+      }
+      data.version = 5;
+    }
+    return data;
   }
 
   function clear() {

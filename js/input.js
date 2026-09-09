@@ -14,13 +14,20 @@ function createInput(screen) {
     uiTap: null, // {x,y}
     // 攻击键
     attackPressed: false,
-    skillPressed: [false, false, false],
+    skillPressed: [false, false, false, false],
     // 键位（开发者工具键盘）
     keys: {}
   };
 
   function toDesign(clientX, clientY) {
     return screen.screenToDesign(clientX, clientY);
+  }
+
+  function markSkillKey(key) {
+    if (key === '1' || key === 'q' || key === 'Q') state.skillPressed[0] = true;
+    if (key === '2') state.skillPressed[1] = true;
+    if (key === '3' || key === 'e' || key === 'E') state.skillPressed[2] = true;
+    if (key === '4' || key === 'r' || key === 'R') state.skillPressed[3] = true;
   }
 
   function onTouchStart(e) {
@@ -83,18 +90,14 @@ function createInput(screen) {
       wx.onKeyDown((e) => {
         state.keys[e.key] = true;
         if (e.key === 'a' || e.key === 'A' || e.key === 'j' || e.key === 'J') state.attackPressed = true;
-        if (e.key === '1') state.skillPressed[0] = true;
-        if (e.key === '2') state.skillPressed[1] = true;
-        if (e.key === '3') state.skillPressed[2] = true;
+        markSkillKey(e.key);
       });
       wx.onKeyUp((e) => { state.keys[e.key] = false; });
     } else if (typeof window !== 'undefined') {
       window.addEventListener('keydown', (e) => {
         state.keys[e.key] = true;
         if (e.key === 'a' || e.key === 'A' || e.key === 'j' || e.key === 'J') state.attackPressed = true;
-        if (e.key === '1') state.skillPressed[0] = true;
-        if (e.key === '2') state.skillPressed[1] = true;
-        if (e.key === '3') state.skillPressed[2] = true;
+        markSkillKey(e.key);
       });
       window.addEventListener('keyup', (e) => { state.keys[e.key] = false; });
     }
@@ -105,7 +108,7 @@ function createInput(screen) {
     state.justReleased = [];
     state.uiTap = null;
     state.attackPressed = false;
-    state.skillPressed = [false, false, false];
+    state.skillPressed = [false, false, false, false];
   }
 
   /** 仅 WASD / 方向键（无摇杆） */

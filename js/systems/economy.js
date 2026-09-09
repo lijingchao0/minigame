@@ -9,7 +9,10 @@ const SHOP_STOCK = [
   { id: 'mp_pill', price: 20 },
   { id: 'xp_pill', price: 35 },
   { id: 'herb_necklace', price: 100 },
+  { id: 'wood_armor', price: 70 },
   { id: 'stone_armor', price: 120 },
+  { id: 'iron_armor', price: 180 },
+  { id: 'jaw_blade', price: 110 },
   { id: 'spirit_herb', price: 8 }
 ];
 

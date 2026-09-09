@@ -21,9 +21,32 @@ const ITEM_DEFS = {
   root_awaken_pill: { name: '灵根觉醒丹', icon: 'pill_purple', cat: '丹药', desc: '点亮一个空余灵根位（最多3）。', sell: 120, use: 'root_awaken' },
   yao_dan: { name: '妖丹', icon: 'yao_dan', cat: '材料', desc: '高阶妖兽内丹，用于灵根进阶。', sell: 35 },
   ling_sui: { name: '灵髓', icon: 'ling_sui', cat: '材料', desc: '凝练灵根的精华，用于灵根进阶。', sell: 20 },
-  // 装备
-  herb_necklace: { name: '灵草项链', icon: 'neck', cat: '装备', desc: '移速 +15%。', sell: 80, equip: 'neck', stat: 'speed', value: 0.15 },
-  stone_armor: { name: '石甲片', icon: 'armor', cat: '装备', desc: '防御 +5。', sell: 100, equip: 'armor', stat: 'def', value: 5 },
+  // 装备（含外观 look：player 绘制时叠加）
+  herb_necklace: {
+    name: '灵草项链', icon: 'neck', cat: '装备', desc: '移速 +15%。颈部绿叶饰。',
+    sell: 80, equip: 'neck', stat: 'speed', value: 0.15,
+    look: { chain: '#27ae60', gem: '#2ecc71', leaf: '#58d68d', w: 2.2, h: 3.2 }
+  },
+  stone_armor: {
+    name: '石甲片', icon: 'armor', cat: '装备', desc: '防御 +5。灰石甲壳披身。',
+    sell: 100, equip: 'armor', stat: 'def', value: 5,
+    look: { dark: '#4a4a4a', light: '#9a9a9a', shell: '#bdc3c7', plates: 'rgba(189,195,199,0.5)' }
+  },
+  wood_armor: {
+    name: '木甲', icon: 'armor', cat: '装备', desc: '防御 +3。棕色甲壳。',
+    sell: 60, equip: 'armor', stat: 'def', value: 3,
+    look: { dark: '#3d2814', light: '#8b5a2b', shell: '#a07040', plates: 'rgba(160,112,64,0.45)' }
+  },
+  iron_armor: {
+    name: '铁甲', icon: 'armor', cat: '装备', desc: '防御 +8。金属亮色甲壳。',
+    sell: 160, equip: 'armor', stat: 'def', value: 8,
+    look: { dark: '#2c3e50', light: '#85929e', shell: '#d5dbdb', plates: 'rgba(213,219,219,0.55)' }
+  },
+  jaw_blade: {
+    name: '颚刃', icon: 'weapon', cat: '装备', desc: '攻击 +4。手持短刃。',
+    sell: 90, equip: 'weapon', stat: 'atk', value: 4,
+    look: { shaft: '#6b4420', tip: '#bdc3c7' }
+  },
   // 任务品
   stolen_goods: { name: '被盗货物', icon: 'box', cat: '任务品', desc: '瓢虫商人丢失的货箱。', sell: 0, quest: true },
   queen_letter: { name: '蚁后手谕', icon: 'letter', cat: '任务品', desc: '瑶光蚁后的亲笔信。', sell: 0, quest: true },
@@ -128,6 +151,20 @@ function drawItemIcon(ctx, icon, x, y, size) {
       ctx.fillStyle = '#bdc3c7';
       ctx.fillRect(x - 3, y - 3, 6, 6);
       break;
+    case 'weapon':
+      ctx.strokeStyle = '#6b4420';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, y + 4);
+      ctx.lineTo(x + 4, y - 4);
+      ctx.stroke();
+      ctx.fillStyle = '#bdc3c7';
+      ctx.beginPath();
+      ctx.moveTo(x + 2, y - 5);
+      ctx.lineTo(x + 6, y - 2);
+      ctx.lineTo(x + 3, y);
+      ctx.fill();
+      break;
     case 'box':
       ctx.fillStyle = '#8b5a2b';
       ctx.fillRect(x - 5, y - 4, 10, 8);
@@ -167,15 +204,22 @@ function drawGatherable(ctx, g, cam, time) {
   if (g.taken) return;
   if (!cam.inView(g.x, g.y, 20)) return;
   const sp = cam.worldToScreen(g.x, g.y);
-  const bob = Math.sin(time * 2 + g.x) * 1.5;
+  const bob = Math.sin(time * 2.4 + g.x) * 2.2;
   ctx.save();
   drawShadow(ctx, sp.x, sp.y + 4, 5, 2);
   const def = ITEM_DEFS[g.itemId];
   if (def) drawItemIcon(ctx, def.icon, sp.x, sp.y + bob, 14);
-  // 可采集提示光
-  ctx.strokeStyle = 'rgba(241,196,15,0.35)';
+  // 亮边 + 浮动光圈，一眼可辨
+  const pulse = 11 + Math.sin(time * 3.2) * 2.5;
+  ctx.strokeStyle = 'rgba(241,196,15,0.75)';
+  ctx.lineWidth = 1.8;
   ctx.beginPath();
-  ctx.arc(sp.x, sp.y + bob, 10 + Math.sin(time * 3) * 2, 0, Math.PI * 2);
+  ctx.arc(sp.x, sp.y + bob, pulse, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,200,0.35)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(sp.x, sp.y + bob, pulse + 2, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 }

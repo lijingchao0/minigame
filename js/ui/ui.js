@@ -89,7 +89,7 @@ function createUI(screen) {
     drawText(ctx, '蚂蚁修仙', w / 2, h * 0.52, {
       align: 'center', font: 'bold 42px "PingFang SC","KaiTi",serif', color: '#f5e6c8', shadow: true
     });
-    drawText(ctx, 'v2.2 · 灵智初开', w / 2, h * 0.52 + 48, {
+    drawText(ctx, 'v2.3 · 灵智初开', w / 2, h * 0.52 + 48, {
       align: 'center', font: '14px "PingFang SC",sans-serif', color: COLORS.gold
     });
 
@@ -260,51 +260,97 @@ function createUI(screen) {
 
   function drawHotbar(ctx, game, w, h) {
     const near = nearestEnemyDist(game);
-    const wantShow = near < 140;
-    const targetA = wantShow ? 0.92 : (near < 220 ? 0.4 : 0);
+    const tutCombat = game.tutorial && game.tutorial.state.active &&
+      game.tutorial.current() && game.tutorial.current().id === 'combat';
+    const wantShow = tutCombat || near < 140;
+    const targetA = wantShow ? 0.95 : (near < 220 ? 0.42 : 0);
     ui.hotbarAlpha += (targetA - ui.hotbarAlpha) * 0.15;
     ui._hotbtns = [];
     if (ui.hotbarAlpha < 0.05) return;
 
-    const slotW = 30;
-    const barH = 36;
-    const slots = 4;
-    const barW = slotW * slots + 16;
+    // 圆形技能键：普攻 + 最多 4 技能
+    const skills = game.cultivation.state.learned;
+    const slotN = 1 + Math.min(4, Math.max(skills.length, 2));
+    const R = 18;
+    const gap = 8;
+    const barW = slotN * (R * 2 + gap) + 12;
     const barX = (w - barW) / 2;
-    const barY = h - 44;
+    const barY = h - 52;
+    const cy = barY + 24;
 
     ctx.save();
     ctx.globalAlpha = ui.hotbarAlpha;
-    drawPanel(ctx, barX, barY, barW, barH, {
-      radius: 6,
-      fill: wantShow ? 'rgba(48,42,36,0.72)' : 'rgba(48,42,36,0.4)'
+    drawPanel(ctx, barX, barY, barW, 48, {
+      radius: 12,
+      fill: wantShow ? 'rgba(48,42,36,0.78)' : 'rgba(48,42,36,0.42)'
     });
 
-    const skills = game.cultivation.state.learned;
-    const ax = barX + 6;
-    drawButton(ctx, ax, barY + 5, slotW - 2, 26, '攻', { font: 'bold 11px sans-serif' });
-    if (ui.hotbarAlpha > 0.35) {
-      ui._hotbtns.push({ id: 'attack', x: ax, y: barY + 5, w: slotW - 2, h: 26 });
-    }
-
-    for (let i = 0; i < 3; i++) {
-      const sx = barX + 6 + (i + 1) * slotW;
-      const sk = SKILLS.find((s) => s.id === skills[i]);
-      const label = sk ? sk.name.slice(0, 2) : '—';
-      const cd = sk ? (game.cultivation.state.skillCd[sk.id] || 0) : 0;
-      drawButton(ctx, sx, barY + 5, slotW - 2, 26, label, {
-        disabled: !sk, font: 'bold 10px sans-serif'
-      });
-      if (cd > 0) {
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        roundRect(ctx, sx, barY + 5, slotW - 2, 26, 5);
+    function drawSkillCircle(cx, cy, label, opts) {
+      opts = opts || {};
+      const disabled = opts.disabled;
+      const cd = opts.cd || 0;
+      const cdMax = opts.cdMax || 1;
+      const noMp = opts.noMp;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = disabled || noMp ? '#3a3228' : '#6b4a28';
+      ctx.fill();
+      ctx.strokeStyle = disabled ? '#4a4030' : COLORS.gold;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      if (!disabled && !noMp) {
+        ctx.fillStyle = 'rgba(255,220,150,0.18)';
+        ctx.beginPath();
+        ctx.arc(cx, cy - 4, R * 0.55, Math.PI, 0);
         ctx.fill();
-        drawText(ctx, cd.toFixed(0), sx + (slotW - 2) / 2, barY + 14, {
-          align: 'center', font: '10px sans-serif', color: '#fff'
+      }
+      drawText(ctx, label, cx, cy - 5, {
+        align: 'center', font: 'bold 10px sans-serif',
+        color: disabled || noMp ? '#776655' : COLORS.text
+      });
+      if (cd > 0 && cdMax > 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + (cd / cdMax) * Math.PI * 2);
+        ctx.closePath();
+        ctx.fill();
+        drawText(ctx, Math.ceil(cd) + '', cx, cy - 5, {
+          align: 'center', font: 'bold 11px sans-serif', color: '#fff'
         });
       }
+      if (noMp && !disabled) {
+        drawText(ctx, '灵', cx, cy + 8, {
+          align: 'center', font: '8px sans-serif', color: '#5dade2'
+        });
+      }
+    }
+
+    // 普攻
+    const ax = barX + 10 + R;
+    drawSkillCircle(ax, cy, '攻', {});
+    if (ui.hotbarAlpha > 0.35) {
+      ui._hotbtns.push({ id: 'attack', x: ax - R, y: cy - R, w: R * 2, h: R * 2 });
+    }
+
+    const SKILL_SHORT = { lingbu: '步', jiaqiao: '甲', tusi: '丝', leifa: '雷' };
+    for (let i = 0; i < Math.min(4, slotN - 1); i++) {
+      const sx = barX + 10 + (i + 1) * (R * 2 + gap) + R;
+      const sk = SKILLS.find((s) => s.id === skills[i]);
+      const label = sk ? (SKILL_SHORT[sk.id] || sk.name.slice(0, 1)) : '—';
+      const cd = sk ? (game.cultivation.state.skillCd[sk.id] || 0) : 0;
+      const noMp = sk && game.player.mp < sk.mpCost;
+      drawSkillCircle(sx, cy, label, {
+        disabled: !sk,
+        cd,
+        cdMax: sk ? sk.cd : 1,
+        noMp
+      });
       if (ui.hotbarAlpha > 0.35) {
-        ui._hotbtns.push({ id: 'skill' + i, x: sx, y: barY + 5, w: slotW - 2, h: 26, skillId: sk ? sk.id : null });
+        ui._hotbtns.push({
+          id: 'skill' + i, x: sx - R, y: cy - R, w: R * 2, h: R * 2,
+          skillId: sk ? sk.id : null
+        });
       }
     }
     ctx.restore();
@@ -318,7 +364,7 @@ function createUI(screen) {
     const bw = Math.min(260, w - 120);
     if (!track) {
       drawPanel(ctx, bx, by, bw, 28, { radius: 5, fill: 'rgba(48,42,36,0.75)' });
-      drawText(ctx, '无事可做，去蚁后处接任务', bx + 8, by + 8, {
+      drawText(ctx, '无事可做，沿主线指引推进', bx + 8, by + 8, {
         font: '10px sans-serif', color: COLORS.textDim
       });
       ui._questBriefHit = { x: bx, y: by, w: bw, h: 28 };
@@ -684,42 +730,57 @@ function createUI(screen) {
     const ph = h - 80;
     drawPanel(ctx, px, py, pw, ph, { gold: true, radius: 10 });
     drawText(ctx, '任务日志', px + 16, py + 12, { font: 'bold 16px serif', color: COLORS.gold });
-    drawText(ctx, '点击任务可追踪', px + 100, py + 16, { font: '10px sans-serif', color: COLORS.textDim });
+    drawText(ctx, '主线不可放弃 · 点击追踪', px + 100, py + 16, { font: '10px sans-serif', color: COLORS.textDim });
     drawButton(ctx, px + pw - 70, py + 8, 54, 28, '关闭');
     ui._qClose = { x: px + pw - 70, y: py + 8, w: 54, h: 28 };
 
-    let y = py + 48;
-    drawText(ctx, '进行中', px + 16, y, { font: 'bold 12px sans-serif', color: '#5dade2' });
-    y += 20;
+    let y = py + 44;
     ui._qTrackBtns = [];
     const activeIds = Object.keys(game.quests.state.active);
-    if (!activeIds.length) {
-      drawText(ctx, '暂无进行中任务 · 去蚁后/NPC 处接取', px + 16, y, {
-        font: '11px sans-serif', color: COLORS.textDim
-      });
-      y += 24;
-    }
-    for (let i = 0; i < activeIds.length; i++) {
-      const id = activeIds[i];
-      const q = game.quests.getDef(id);
-      const step = game.quests.currentStep(id);
-      const tracking = game.quests.state.tracking === id;
-      drawPanel(ctx, px + 12, y, pw - 24, 48, {
-        radius: 6, borderColor: tracking ? COLORS.gold : COLORS.panelBorder
-      });
-      drawText(ctx, (q.chapter ? '主线·' : '支线·') + q.name + (tracking ? ' 〔追踪中〕' : ''), px + 20, y + 6, {
-        font: 'bold 12px sans-serif', color: COLORS.gold
-      });
-      drawText(ctx, step ? step.text : '完成', px + 20, y + 24, { font: '10px sans-serif' });
-      ui._qTrackBtns.push({ id, x: px + 12, y, w: pw - 24, h: 48 });
-      y += 56;
-      if (y > py + ph - 80) break;
+    const mainActive = activeIds.filter((id) => id.charAt(0) === 'm');
+    const sideActive = activeIds.filter((id) => id.charAt(0) !== 'm');
+    const completedIds = Object.keys(game.quests.state.completed);
+
+    function drawSection(title, ids, color) {
+      if (y > py + ph - 50) return;
+      drawText(ctx, title, px + 16, y, { font: 'bold 12px sans-serif', color });
+      y += 18;
+      if (!ids.length) {
+        drawText(ctx, '（空）', px + 16, y, { font: '10px sans-serif', color: COLORS.textDim });
+        y += 18;
+        return;
+      }
+      for (let i = 0; i < ids.length; i++) {
+        if (y > py + ph - 56) break;
+        const id = ids[i];
+        const q = game.quests.getDef(id);
+        if (!q) continue;
+        const step = game.quests.currentStep(id);
+        const tracking = game.quests.state.tracking === id;
+        const done = !!game.quests.state.completed[id];
+        drawPanel(ctx, px + 12, y, pw - 24, done ? 36 : 48, {
+          radius: 6, borderColor: tracking ? COLORS.gold : COLORS.panelBorder
+        });
+        const tag = q.chapter ? '主线' : '支线';
+        drawText(ctx, tag + '·' + q.name + (tracking ? ' 〔追踪〕' : '') + (done ? ' ✓' : ''), px + 20, y + 6, {
+          font: 'bold 12px sans-serif', color: done ? COLORS.textDim : COLORS.gold
+        });
+        if (!done) {
+          drawText(ctx, step ? step.text : '…', px + 20, y + 24, { font: '10px sans-serif' });
+          ui._qTrackBtns.push({ id, x: px + 12, y, w: pw - 24, h: 48 });
+          y += 56;
+        } else {
+          y += 42;
+        }
+      }
+      y += 6;
     }
 
-    y += 8;
-    drawText(ctx, '已完成 ' + Object.keys(game.quests.state.completed).length + ' / 主线进度 ' + game.quests.state.mainDone, px + 16, y, {
-      font: '11px sans-serif', color: COLORS.textDim
-    });
+    drawSection('主线', mainActive, '#f1c40f');
+    drawSection('支线', sideActive, '#5dade2');
+    // 已完成（仅列主线+最近支线，防溢出）
+    const doneShow = completedIds.slice(-6);
+    drawSection('已完成 ' + completedIds.length + '（主线进度 ' + game.quests.state.mainDone + '）', doneShow, '#95a5a6');
   }
 
   // —— 商店 ——

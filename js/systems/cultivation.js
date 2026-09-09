@@ -357,6 +357,11 @@ function createCultivation() {
         const sk = SKILLS[i];
         if (sk.unlockRealm <= state.realm && state.learned.indexOf(sk.id) < 0) {
           state.learned.push(sk.id);
+          if (onResult) {
+            // 通过成功回调附带技能提示：在 game 侧 toast
+            player._pendingSkillUnlock = player._pendingSkillUnlock || [];
+            player._pendingSkillUnlock.push(sk.name);
+          }
         }
       }
       if (particles) particles.breakthrough(player.x + 6, player.y);
@@ -394,12 +399,31 @@ function createCultivation() {
 
     if (id === 'lingbu') {
       player.buffs.lingbu = sk.duration;
-      if (particles) particles.floatText(player.x, player.y - 16, '灵步！', '#1abc9c');
+      if (particles) {
+        particles.floatText(player.x, player.y - 16, '灵步！', '#1abc9c');
+        for (let i = 0; i < 8; i++) {
+          particles.hitSpark(
+            player.x + (Math.random() - 0.5) * 20,
+            player.y + (Math.random() - 0.5) * 12
+          );
+        }
+      }
     } else if (id === 'jiaqiao') {
       player.buffs.jiaqiao = sk.duration;
-      if (particles) particles.floatText(player.x, player.y - 16, '甲壳护体！', '#bdc3c7');
+      if (particles) {
+        particles.floatText(player.x, player.y - 16, '甲壳护体！', '#bdc3c7');
+        particles.breakthrough(player.x + 6, player.y);
+      }
     } else if (id === 'tusi') {
       const pc = player.getCenter();
+      if (particles) {
+        // 范围圈提示
+        particles.floatText(pc.x, pc.y - 20, '吐丝！', '#ecf0f1');
+        for (let a = 0; a < 12; a++) {
+          const ang = (a / 12) * Math.PI * 2;
+          particles.hitSpark(pc.x + Math.cos(ang) * 40, pc.y + Math.sin(ang) * 40);
+        }
+      }
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
         if (e.dead) continue;
@@ -425,9 +449,17 @@ function createCultivation() {
       if (best) {
         const dmg = best.takeDamage((sk.damage + player.atk * 0.5) * leifaDamageBonus());
         if (particles) {
-          particles.hitSpark(best.getCenter().x, best.getCenter().y);
+          // 弹道感：沿线火花
+          const ec = best.getCenter();
+          for (let t = 0; t < 5; t++) {
+            const u = t / 4;
+            particles.hitSpark(pc.x + (ec.x - pc.x) * u, pc.y + (ec.y - pc.y) * u);
+          }
+          particles.hitSpark(ec.x, ec.y);
           particles.floatText(best.x, best.y - 12, '-' + Math.floor(dmg), '#9b59b6');
         }
+      } else if (particles) {
+        particles.floatText(player.x, player.y - 16, '无目标', '#9b59b6');
       }
     }
     return true;

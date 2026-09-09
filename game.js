@@ -24,6 +24,7 @@ const { createSave } = require('./js/systems/save.js');
 const { createUI } = require('./js/ui/ui.js');
 const { findPath } = require('./js/engine/pathfind.js');
 const { drawOpportunity, findNearbyOpportunity, triggerOpportunity } = require('./js/systems/opportunity.js');
+const { createTutorial } = require('./js/systems/tutorial.js');
 
 // ========== Canvas 获取 ==========
 function getCanvas() {
@@ -137,6 +138,7 @@ function createGame(screen) {
     quests: createQuestSystem(),
     save: createSave(),
     uiApi: createUI(screen),
+    tutorial: createTutorial(),
     input: null,
     settings: null,
     mode: 'title', // title | play
@@ -213,6 +215,7 @@ function createGame(screen) {
 
   function startNewGame() {
     game.player = createPlayer(0, 0);
+    game.player.getEquip = () => game.inventory.state.equip;
     game.cultivation.state.realm = 0;
     game.cultivation.state.stage = 0;
     game.cultivation.state.xp = 0;
@@ -226,13 +229,21 @@ function createGame(screen) {
     game.player.mp = game.player.maxMp;
     game.inventory.state.gold = 20;
     game.inventory.state.slots = [];
-    game.inventory.state.equip = { neck: null, armor: null };
+    game.inventory.state.equip = { neck: null, armor: null, weapon: null };
     game.inventory.add('berry', 2);
     game.inventory.add('hp_pill', 1);
+    game.quests.state.active = {};
+    game.quests.state.completed = {};
+    game.quests.state.mainDone = 0;
+    game.quests.state.tracking = null;
+    game.tutorial.state.done = false;
+    game.tutorial.state.active = false;
     loadRegion('grassland');
     game.mode = 'play';
     game.uiApi.ui.titlePhase = 'game';
     game.uiApi.ui.panel = null;
+    // 主线自动接取
+    game.quests.bootstrap(game);
     const rootLabel = game.cultivation.rootsLabel();
     setTimeout(() => {
       game.dialog.open({
@@ -243,10 +254,11 @@ function createGame(screen) {
           '头痛……触角为何在发光？',
           '我……能思考了？我是一只开了灵智的工蚁。',
           '体内灵根已定：' + rootLabel + '。',
-          '北边有同伴的气息。去找侦察蚁·疾风问问看。'
+          '主线已自动开启。先跟随指引，熟悉身体与周围。'
         ],
         onClose: () => {
-          game.uiApi.toast('点击地图移动 · 灵根：' + rootLabel);
+          game.uiApi.toast('主线推进 · 灵根：' + rootLabel);
+          if (game.tutorial.shouldStart(game)) game.tutorial.start(game);
         }
       });
     }, 400);
@@ -256,11 +268,13 @@ function createGame(screen) {
     const data = game.save.load();
     if (!data) return false;
     game.player = createPlayer(data.player.x, data.player.y);
+    game.player.getEquip = () => game.inventory.state.equip;
     game.cultivation.deserialize(data.cultivation, game.player);
     game.inventory.deserialize(data.inventory, game.player);
     game.kingdom.deserialize(data.kingdom);
     game.quests.deserialize(data.quests);
     game.daycycle.deserialize(data.daycycle);
+    game.tutorial.deserialize(data);
     if (data.unlocked) {
       for (let i = 0; i < data.unlocked.length; i++) game.regions.unlock(data.unlocked[i]);
     }
@@ -273,6 +287,11 @@ function createGame(screen) {
     loadRegion(data.player.region || 'grassland', data.player.x, data.player.y);
     game.mode = 'play';
     game.uiApi.ui.titlePhase = 'game';
+    // 兼容旧档：主线断了则自动续接
+    const hasMain = Object.keys(game.quests.state.active).some((id) => id.charAt(0) === 'm');
+    if (!hasMain && game.quests.state.mainDone < 7) {
+      game.quests.autoAcceptMain(game, true);
+    }
     game.uiApi.toast('欢迎回来 · ' + game.cultivation.rootsLabel());
     return true;
   }
@@ -314,6 +333,7 @@ function createGame(screen) {
       const def = ITEM_DEFS[g.itemId];
       game.particles.floatText(g.x, g.y - 10, '+' + (def ? def.name : g.itemId), '#f1c40f');
       game.quests.onGather(g.itemId, g.amount || 1, game);
+      game.tutorial.notify('gather', game);
       vibe();
       return;
     }
@@ -336,6 +356,7 @@ function createGame(screen) {
     const npc = findNearestNpc(game.npcs, pc.x, pc.y, 30);
     if (npc) {
       openNpcDialog(npc);
+      game.tutorial.notify('talk', game);
       return;
     }
   }
@@ -344,8 +365,10 @@ function createGame(screen) {
     const def = npc.def;
     const qres = game.quests.onTalk(npc.defId, game);
 
-    // 可接任务
-    const available = game.quests.allDefs().filter((q) => q.giver === npc.defId && game.quests.canAccept(q));
+    // 可接任务（仅支线需手动接取；主线已自动接取）
+    const available = game.quests.allDefs().filter((q) =>
+      q.giver === npc.defId && game.quests.canAccept(q) && q.id.charAt(0) !== 'm'
+    );
 
     if (qres.handled && qres.mode === 'need_items') {
       game.dialog.open({
@@ -639,6 +662,12 @@ function createGame(screen) {
       return 'ui';
     }
 
+    // 教程按钮（跳过/下一步）
+    if (game.tutorial.state.active && game.tutorial.handleTap(x, y)) {
+      if (game.tutorial.state.done) game.uiApi.toast('已跳过教程');
+      return 'ui';
+    }
+
     if (ui.panel === 'inventory') {
       handleInvTap(x, y);
       return 'ui';
@@ -713,8 +742,12 @@ function createGame(screen) {
       if (hitTest(x, y, b.x, b.y, b.w, b.h)) {
         if (b.id === 'attack') {
           game.combat.tryAttack(game.player, game.enemies, game.particles, vibe);
+          game.tutorial.notify('attack', game);
         } else if (b.skillId) {
-          game.cultivation.useSkill(b.skillId, game.player, game.enemies, game.particles);
+          const ok = game.cultivation.useSkill(b.skillId, game.player, game.enemies, game.particles);
+          if (ok) game.tutorial.notify('attack', game);
+          else if (!game.cultivation.state.learned.length) game.uiApi.toast('尚未学会技能');
+          else game.uiApi.toast('冷却中或灵力不足');
         }
         return 'ui';
       }
@@ -723,8 +756,10 @@ function createGame(screen) {
     for (let i = 0; i < funcs.length; i++) {
       const b = funcs[i];
       if (hitTest(x, y, b.x, b.y, b.w, b.h)) {
-        if (b.id === 'bag') ui.panel = 'inventory';
-        else if (b.id === 'quest') ui.panel = 'quests';
+        if (b.id === 'bag') {
+          ui.panel = 'inventory';
+          game.tutorial.notify('bag', game);
+        } else if (b.id === 'quest') ui.panel = 'quests';
         else if (b.id === 'meditate') doMeditate();
         else if (b.id === 'menu') ui.panel = 'menu';
         return 'ui';
@@ -735,6 +770,7 @@ function createGame(screen) {
     if (ui._speedBtn && hitTest(x, y, ui._speedBtn.x, ui._speedBtn.y, ui._speedBtn.w, ui._speedBtn.h)) {
       const n = game.daycycle.cycleSpeed();
       game.uiApi.toast('时间倍速 ' + n + '×');
+      game.tutorial.notify('speed', game);
       return 'ui';
     }
 
@@ -756,6 +792,7 @@ function createGame(screen) {
     if (npc && dist(game.player.getCenter().x, game.player.getCenter().y, npc.getCenter().x, npc.getCenter().y) < 40) {
       clearWalk();
       openNpcDialog(npc);
+      game.tutorial.notify('talk', game);
       return 'npc';
     }
 
@@ -870,6 +907,7 @@ function createGame(screen) {
     if (ui._setSpeed && hitTest(x, y, ui._setSpeed.x, ui._setSpeed.y, ui._setSpeed.w, ui._setSpeed.h)) {
       const n = game.daycycle.cycleSpeed();
       game.uiApi.toast('时间倍速 ' + n + '×');
+      game.tutorial.notify('speed', game);
     }
   }
 
@@ -877,10 +915,13 @@ function createGame(screen) {
     const region = game.regions.getCurrent();
     if (!region || region.id !== 'nest_cave') {
       game.uiApi.toast('请在蚁巢修炼室吐纳');
-      return;
+      // 教程阶段允许在任意处演示一次
+      if (!(game.tutorial.state.active && game.tutorial.current() && game.tutorial.current().id === 'meditate')) {
+        return;
+      }
     }
     // 靠近水晶
-    const nearCrystal = region.map.decor.some((d) =>
+    const nearCrystal = region && region.map.decor.some((d) =>
       d.type === 'crystal' && dist(d.x, d.y, game.player.x, game.player.y) < 50
     );
     if (!nearCrystal && game.player.x < 40 * TILE) {
@@ -896,6 +937,7 @@ function createGame(screen) {
     game.particles.breakthrough(game.player.x + 6, game.player.y);
     vibe();
     game.uiApi.toast('吐纳 +' + gained + ' 修为');
+    game.tutorial.notify('meditate', game);
   }
 
   // —— 更新 ——
@@ -925,6 +967,10 @@ function createGame(screen) {
           if (ok) {
             game.uiApi.showBreakthrough(msg);
             game.uiApi.toast('渡劫成功！金身铸成！');
+            if (game.player._pendingSkillUnlock && game.player._pendingSkillUnlock.length) {
+              game.uiApi.toast('解锁技能：' + game.player._pendingSkillUnlock.join('、'));
+              game.player._pendingSkillUnlock = null;
+            }
           } else {
             game.uiApi.toast(msg);
             loadRegion('nest_cave');
@@ -1050,11 +1096,15 @@ function createGame(screen) {
     // 键盘攻击/技能
     if (game.input.state.attackPressed) {
       game.combat.tryAttack(game.player, game.enemies, game.particles, vibe);
+      game.tutorial.notify('attack', game);
     }
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       if (game.input.state.skillPressed[i]) {
         const sid = game.cultivation.state.learned[i];
-        if (sid) game.cultivation.useSkill(sid, game.player, game.enemies, game.particles);
+        if (sid) {
+          game.cultivation.useSkill(sid, game.player, game.enemies, game.particles);
+          game.tutorial.notify('attack', game);
+        }
       }
     }
 
@@ -1152,6 +1202,22 @@ function createGame(screen) {
     game.particles.update(dt);
     game.particles.updateUI(dt);
 
+    // 教程
+    game.tutorial.update(dt, game);
+    // 战斗教学：确保附近有一只弱怪
+    if (game.tutorial.state.active && game.tutorial.current() && game.tutorial.current().id === 'combat') {
+      const alive = game.enemies.some((e) => !e.dead);
+      if (!alive) {
+        const p = game.player;
+        const e = createEnemy('spider', p.x + 50, p.y + 10);
+        e.hp = 18;
+        e.maxHp = 18;
+        e._tutorial = true;
+        game.enemies.push(e);
+        game.uiApi.toast('练习用草蛛出现了');
+      }
+    }
+
     // 自动存档（周期性）
     if (!game._saveAcc) game._saveAcc = 0;
     game._saveAcc += dt;
@@ -1237,7 +1303,7 @@ function createGame(screen) {
       const drawList = [];
       for (let i = 0; i < game.npcs.length; i++) drawList.push({ y: game.npcs[i].y, d: game.npcs[i], t: 'npc' });
       for (let i = 0; i < game.enemies.length; i++) {
-        if (!game.enemies[i].dead || game.enemies[i].deadT < 1) {
+        if (!game.enemies[i].dead || game.enemies[i].deadT < 1.2) {
           drawList.push({ y: game.enemies[i].y, d: game.enemies[i], t: 'enemy' });
         }
       }
@@ -1250,6 +1316,9 @@ function createGame(screen) {
       }
 
       game.particles.draw(ctx, game.camera);
+
+      // 教程世界标记
+      game.tutorial.drawWorldMarker(ctx, game);
 
       // 昼夜
       game.daycycle.drawOverlay(ctx, w, h);
@@ -1285,6 +1354,11 @@ function createGame(screen) {
 
     game.uiApi.drawDialog(ctx, game.dialog);
     game.transition.draw(ctx, w, h);
+
+    // 新手教程 overlay（最上层之一）
+    if (game.tutorial.state.active && !game.dialog.state.open && !game.uiApi.ui.panel) {
+      game.tutorial.draw(ctx, game, screen);
+    }
 
     screen.endFrame();
   }
