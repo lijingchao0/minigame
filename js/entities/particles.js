@@ -33,7 +33,8 @@ function createParticles() {
   }
 
   function hitSpark(x, y) {
-    spawn('spark', x, y, { count: 6, spread: 20, life: 0.35, color: '#ffeaa7', size: 2 });
+    spawn('spark', x, y, { count: 10, spread: 55, life: 0.4, color: '#ffeaa7', size: 2.5 });
+    spawn('spark', x, y, { count: 4, speed: 30, life: 0.25, color: '#ffffff', size: 2 });
   }
 
   function leaf(x, y) {

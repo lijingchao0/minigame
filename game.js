@@ -1,5 +1,5 @@
 /**
- * 《蚂蚁修仙》v2 — 游戏入口
+ * 《蚂蚁修仙》v2.4 — 游戏入口（横屏 + 饥荒式战斗）
  * 微信小游戏：优先 GameGlobal.canvas / 全局 canvas / wx.createCanvas()
  */
 const { TILE, clamp, dist, hitTest } = require('./js/pix.js');
@@ -64,15 +64,20 @@ function vibrateShort() {
   } catch (e) { /* ignore */ }
 }
 
-// ========== 屏幕适配 ==========
+// ========== 屏幕适配（横屏 landscape） ==========
 function createScreen(cvs) {
   const info = getWindowInfo();
   const dpr = Math.min(info.pixelRatio || 2, 3);
-  const sw = info.windowWidth;
-  const sh = info.windowHeight;
-  // 设计分辨率（竖屏）
-  const designW = 375;
-  const designH = 667;
+  let sw = info.windowWidth;
+  let sh = info.windowHeight;
+  // 若设备仍报竖屏尺寸，交换以保证 designW > designH
+  if (sw < sh) {
+    const t = sw; sw = sh; sh = t;
+  }
+  // 设计分辨率：约 iPhone X 横屏比例 812×375
+  const designW = 812;
+  const designH = 375;
+  // contain：等比缩放，两侧/上下可留黑边，保证无拉伸变形
   const scale = Math.min(sw / designW, sh / designH);
   const viewW = Math.floor(designW * scale);
   const viewH = Math.floor(designH * scale);
@@ -89,9 +94,12 @@ function createScreen(cvs) {
   const ctx = cvs.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+  const safe = info.safeArea || null;
   return {
     designW, designH, scale, offsetX, offsetY, sw, sh, dpr, cvs, ctx,
-    safeTop: (info.safeArea && info.safeArea.top) || 0,
+    safeTop: (safe && safe.top) || 0,
+    safeLeft: (safe && safe.left) || 0,
+    safeRight: safe ? (sw - safe.right) : 0,
     screenToDesign(clientX, clientY) {
       return {
         x: (clientX - offsetX) / scale,
@@ -100,12 +108,11 @@ function createScreen(cvs) {
     },
     beginFrame() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = '#14100c';
+      ctx.fillStyle = '#0c0a08';
       ctx.fillRect(0, 0, sw, sh);
       ctx.save();
       ctx.translate(offsetX, offsetY);
       ctx.scale(scale, scale);
-      // 裁剪设计区
       ctx.beginPath();
       ctx.rect(0, 0, designW, designH);
       ctx.clip();
@@ -152,7 +159,8 @@ function createGame(screen) {
     _interactHint: null,
     _portalCd: 0,
     heartDemonSpawned: false,
-    loaded: false
+    loaded: false,
+    enemyProjectiles: []
   };
 
   game.settings = game.save.getSettings();
@@ -192,6 +200,7 @@ function createGame(screen) {
     game.gatherables = region.gatherables || [];
     game.opportunities = region.opportunities || [];
     game.drops = [];
+    game.enemyProjectiles = [];
     clearWalk();
     game.camera.follow(res.x, res.y, true);
     game.quests.onVisit(id, game);
@@ -708,14 +717,18 @@ function createGame(screen) {
     if (ui.panel === 'menu') {
       const w = screen.designW;
       const h = screen.designH;
+      const mw = 200;
+      const mh = 200;
+      const mx = (w - mw) / 2;
+      const my = (h - mh) / 2;
       const items = [
-        { id: 'save', y: h / 2 - 40 },
-        { id: 'settings', y: h / 2 },
-        { id: 'title', y: h / 2 + 40 },
-        { id: 'close', y: h / 2 + 80 }
+        { id: 'save', y: my + 48 },
+        { id: 'settings', y: my + 88 },
+        { id: 'title', y: my + 128 },
+        { id: 'close', y: my + 168 }
       ];
       for (let i = 0; i < items.length; i++) {
-        if (y >= items[i].y && y <= items[i].y + 36 && x >= w / 2 - 80 && x <= w / 2 + 80) {
+        if (y >= items[i].y && y <= items[i].y + 36 && x >= mx + 30 && x <= mx + 170) {
           if (items[i].id === 'save') {
             game.save.save(game);
             game.uiApi.toast('存档成功');
@@ -741,7 +754,7 @@ function createGame(screen) {
       const b = hot[i];
       if (hitTest(x, y, b.x, b.y, b.w, b.h)) {
         if (b.id === 'attack') {
-          game.combat.tryAttack(game.player, game.enemies, game.particles, vibe);
+          game.combat.tryAttack(game.player, game.enemies, game.particles, vibe, game.camera);
           game.tutorial.notify('attack', game);
         } else if (b.skillId) {
           const ok = game.cultivation.useSkill(b.skillId, game.player, game.enemies, game.particles);
@@ -780,11 +793,12 @@ function createGame(screen) {
       return 'ui';
     }
 
-    // 左上状态 / 右上资源 / 小地图：视为 UI，不触发移动（与绘制尺寸同步）
+    // 左上状态 / 右上资源 / 小地图：视为 UI，不触发移动
     const w = screen.designW;
     if (ui._hudLeft && hitTest(x, y, ui._hudLeft.x, ui._hudLeft.y, ui._hudLeft.w, ui._hudLeft.h)) return 'ui';
     if (ui._hudRight && hitTest(x, y, ui._hudRight.x, ui._hudRight.y, ui._hudRight.w, ui._hudRight.h)) return 'ui';
-    if (x > w - 105 && y < 130) return 'ui';
+    if (ui._minimapHit && hitTest(x, y, ui._minimapHit.x, ui._minimapHit.y, ui._minimapHit.w, ui._minimapHit.h)) return 'ui';
+    if (ui._hotbarBox && hitTest(x, y, ui._hotbarBox.x, ui._hotbarBox.y, ui._hotbarBox.w, ui._hotbarBox.h)) return 'ui';
 
     // 点击 NPC 附近 → 对话优先
     const world = game.camera.screenToWorld(x, y);
@@ -1095,7 +1109,7 @@ function createGame(screen) {
 
     // 键盘攻击/技能
     if (game.input.state.attackPressed) {
-      game.combat.tryAttack(game.player, game.enemies, game.particles, vibe);
+      game.combat.tryAttack(game.player, game.enemies, game.particles, vibe, game.camera);
       game.tutorial.notify('attack', game);
     }
     for (let i = 0; i < 4; i++) {
@@ -1108,31 +1122,37 @@ function createGame(screen) {
       }
     }
 
+    // 玩家攻击状态机（前摇→挥击命中）
+    game.combat.updatePlayerAttack(
+      game.player, dt, game.enemies, game.particles, vibe, game.camera
+    );
+
     // NPC
     for (let i = 0; i < game.npcs.length; i++) {
       game.npcs[i].questIcon = game.quests.getQuestIcon(game.npcs[i].defId);
       game.npcs[i].update(dt);
     }
 
-    // 敌人
+    // 敌人（饥荒式：无接触伤，仅挥击/弹道命中）
     const isNight = game.daycycle.isNight();
     for (let i = 0; i < game.enemies.length; i++) {
       const e = game.enemies[i];
       const wasDead = e.dead;
-      const res = e.update(dt, game.player, region.map, isNight);
+      const res = e.update(dt, game.player, region.map, isNight, game.enemies);
       if (res && res.attacked && !game.player.dead) {
         const dmg = game.player.takeDamage(res.damage);
         if (dmg > 0) {
-          clearWalk(); // 受击打断寻路
+          clearWalk();
           game.particles.floatText(game.player.x, game.player.y - 14, '-' + dmg, '#e74c3c');
           game.camera.shake(4, 0.2);
           vibe();
         }
       }
+      if (res && res.projectile) {
+        game.enemyProjectiles.push(res.projectile);
+      }
       if (e.dead && !wasDead) {
-        // 刚死
         game.combat.dropLoot(e, game.drops);
-        // 偶尔掉枯枝
         if (Math.random() < 0.35) {
           game.drops.push({
             itemId: 'wood', x: e.x, y: e.y, amount: 1, life: 60, bob: 0, taken: false
@@ -1143,6 +1163,26 @@ function createGame(screen) {
           if (type === 'stage') game.uiApi.showBreakthrough(name);
           if (type === 'need_tribulation') game.uiApi.toast('可渡劫冲击' + name);
         });
+      }
+    }
+
+    // 敌方弹道（可躲）
+    const pcHit = game.player.getCenter();
+    for (let i = game.enemyProjectiles.length - 1; i >= 0; i--) {
+      const p = game.enemyProjectiles[i];
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.life <= 0) { game.enemyProjectiles.splice(i, 1); continue; }
+      if (!game.player.dead && dist(p.x, p.y, pcHit.x, pcHit.y) < 12 + (p.r || 4)) {
+        const dmg = game.player.takeDamage(p.damage);
+        if (dmg > 0) {
+          clearWalk();
+          game.particles.floatText(game.player.x, game.player.y - 14, '-' + dmg, '#e74c3c');
+          game.camera.shake(3, 0.15);
+          vibe();
+        }
+        game.enemyProjectiles.splice(i, 1);
       }
     }
 
@@ -1317,6 +1357,27 @@ function createGame(screen) {
 
       game.particles.draw(ctx, game.camera);
 
+      // 敌方弹道（可见可躲）
+      for (let i = 0; i < game.enemyProjectiles.length; i++) {
+        const p = game.enemyProjectiles[i];
+        if (!game.camera.inView(p.x, p.y, 20)) continue;
+        const sp = game.camera.worldToScreen(p.x, p.y);
+        ctx.save();
+        ctx.fillStyle = p.color || '#f1c40f';
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, p.r || 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // 拖尾
+        ctx.globalAlpha = 0.35;
+        ctx.beginPath();
+        ctx.arc(sp.x - (p.vx || 0) * 0.04, sp.y - (p.vy || 0) * 0.04, (p.r || 4) * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       // 教程世界标记
       game.tutorial.drawWorldMarker(ctx, game);
 
@@ -1344,12 +1405,16 @@ function createGame(screen) {
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0, 0, w, h);
       const { drawPanel, drawButton, drawText, COLORS } = require('./js/pix.js');
-      drawPanel(ctx, w / 2 - 90, h / 2 - 60, 180, 180, { gold: true });
-      drawText(ctx, '菜 单', w / 2, h / 2 - 48, { align: 'center', font: 'bold 16px serif', color: COLORS.gold });
-      drawButton(ctx, w / 2 - 70, h / 2 - 20, 140, 32, '保存进度');
-      drawButton(ctx, w / 2 - 70, h / 2 + 20, 140, 32, '设置');
-      drawButton(ctx, w / 2 - 70, h / 2 + 60, 140, 32, '返回标题');
-      drawButton(ctx, w / 2 - 70, h / 2 + 100, 140, 32, '关闭');
+      const mw = 200;
+      const mh = 200;
+      const mx = (w - mw) / 2;
+      const my = (h - mh) / 2;
+      drawPanel(ctx, mx, my, mw, mh, { gold: true });
+      drawText(ctx, '菜 单', w / 2, my + 14, { align: 'center', font: 'bold 16px serif', color: COLORS.gold });
+      drawButton(ctx, mx + 30, my + 48, 140, 32, '保存进度');
+      drawButton(ctx, mx + 30, my + 88, 140, 32, '设置');
+      drawButton(ctx, mx + 30, my + 128, 140, 32, '返回标题');
+      drawButton(ctx, mx + 30, my + 168, 140, 32, '关闭');
     }
 
     game.uiApi.drawDialog(ctx, game.dialog);

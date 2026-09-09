@@ -19,7 +19,7 @@ const STEPS = [
   {
     id: 'bag',
     title: '背包',
-    text: '点击右侧「包」按钮，打开背包查看物品。',
+    text: '点击右下技能区左侧的「包」按钮，打开背包查看物品。',
     highlight: 'bag'
   },
   {
@@ -31,13 +31,13 @@ const STEPS = [
   {
     id: 'meditate',
     title: '修炼',
-    text: '点击右侧「修」进行吐纳修炼，观察修为条与境界变化。',
+    text: '点击「修」进行吐纳修炼，观察修为条与境界变化。',
     highlight: 'meditate'
   },
   {
     id: 'combat',
     title: '战斗',
-    text: '靠近弱怪，点击底部「攻」或技能键发起攻击。',
+    text: '敌人会蓄力前摇再挥击——前摇时拉开距离可躲开。点右下角「攻」反击；命中可打断小怪。',
     highlight: 'combat'
   },
   {
@@ -178,25 +178,29 @@ function createTutorial() {
           const b = ui._funcBtns.find((x) => x.id === 'bag');
           if (b) return { x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 };
         }
-        return { x: w - 52, y: h * 0.42, w: 44, h: 44 };
+        return { x: w - 220, y: h - 140, w: 44, h: 36 };
       case 'meditate':
         if (ui && ui._funcBtns) {
           const b = ui._funcBtns.find((x) => x.id === 'meditate');
           if (b) return { x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 };
         }
-        return { x: w - 52, y: h * 0.52, w: 44, h: 44 };
+        return { x: w - 220, y: h - 100, w: 44, h: 36 };
       case 'speed':
         if (ui && ui._speedBtn) {
           const b = ui._speedBtn;
           return { x: b.x - 4, y: b.y - 4, w: b.w + 8, h: b.h + 8 };
         }
-        return { x: w - 70, y: 8, w: 56, h: 28 };
+        return { x: w - 240, y: 6, w: 44, h: 32 };
       case 'combat':
         if (ui && ui._hotbtns && ui._hotbtns.length) {
           const b = ui._hotbtns[0];
           return { x: b.x - 6, y: b.y - 6, w: b.w + 12, h: b.h + 12 };
         }
-        return { x: w / 2 - 60, y: h - 52, w: 120, h: 44 };
+        if (ui && ui._hotbarBox) {
+          const b = ui._hotbarBox;
+          return { x: b.x - 4, y: b.y - 4, w: Math.min(80, b.w), h: b.h + 8 };
+        }
+        return { x: w - 160, y: h - 56, w: 100, h: 48 };
       case 'world_marker':
       case 'gather':
       case 'npc':
@@ -269,23 +273,23 @@ function createTutorial() {
       }
     }
 
-    // 说明面板
-    const pw = w - 28;
-    const ph = 118;
-    const px = 14;
-    const py = h - ph - 8;
+    // 说明面板（横屏：居中偏下，宽度约 70%）
+    const pw = Math.min(Math.floor(w * 0.7), 520);
+    const ph = 100;
+    const px = Math.floor((w - pw) / 2);
+    const py = h - ph - 10;
     drawPanel(ctx, px, py, pw, ph, { gold: true, radius: 10 });
-    drawText(ctx, '教程 ' + (state.step + 1) + '/' + STEPS.length + ' · ' + cur.title, px + 14, py + 12, {
+    drawText(ctx, '教程 ' + (state.step + 1) + '/' + STEPS.length + ' · ' + cur.title, px + 14, py + 10, {
       font: 'bold 13px sans-serif', color: COLORS.gold
     });
-    drawText(ctx, cur.text, px + 14, py + 36, {
+    drawText(ctx, cur.text, px + 14, py + 32, {
       font: '12px "PingFang SC",sans-serif', color: COLORS.text
     });
 
-    drawButton(ctx, px + 14, py + ph - 40, 90, 30, '跳过教程', { font: 'bold 11px sans-serif' });
-    uiHit.skip = { x: px + 14, y: py + ph - 40, w: 90, h: 30 };
-    drawButton(ctx, px + pw - 104, py + ph - 40, 90, 30, '下一步', { font: 'bold 11px sans-serif' });
-    uiHit.next = { x: px + pw - 104, y: py + ph - 40, w: 90, h: 30 };
+    drawButton(ctx, px + 14, py + ph - 36, 90, 28, '跳过教程', { font: 'bold 11px sans-serif' });
+    uiHit.skip = { x: px + 14, y: py + ph - 36, w: 90, h: 28 };
+    drawButton(ctx, px + pw - 104, py + ph - 36, 90, 28, '下一步', { font: 'bold 11px sans-serif' });
+    uiHit.next = { x: px + pw - 104, y: py + ph - 36, w: 90, h: 28 };
     ctx.restore();
   }
 

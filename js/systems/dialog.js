@@ -1,6 +1,6 @@
 /**
  * 对话系统 — 打字机 + 选项 + 立绘
- * 布局：文本区与按键/选项区分离，避免遮挡
+ * 横屏：居中偏下，宽度约屏宽 70%，左右留白
  */
 function createDialog() {
   const state = {
@@ -11,9 +11,9 @@ function createDialog() {
     pages: [],
     pageIdx: 0,
     charIdx: 0,
-    textSpeed: 40, // 字/秒
+    textSpeed: 40,
     full: false,
-    choices: null, // [{label, onSelect}]
+    choices: null,
     choiceIdx: 0,
     onClose: null,
     portraitId: null,
@@ -77,7 +77,6 @@ function createDialog() {
       state.full = false;
       return;
     }
-    // 最后一页：若有选项则等选择，否则关闭
     if (state.choices && state.choices.length) return;
     close();
   }
@@ -91,35 +90,33 @@ function createDialog() {
   }
 
   /**
-   * 计算对话面板布局（绘制与点击共用）
-   * 文本区在上，选项/下一页按键固定在下部，互不重叠
+   * 横屏对话布局：宽度 ≤70% 屏宽，居中偏下
    */
   function layout(designW, designH) {
     const hasChoices = !!(state.full && state.choices && state.choices.length &&
       state.pageIdx >= state.pages.length - 1);
     const choiceN = hasChoices ? state.choices.length : 0;
     const pad = 12;
-    const nameH = 36;
-    const textH = 78;
-    const choiceRowH = 32;
-    const choiceGap = 6;
+    const nameH = 32;
+    const textH = 64;
+    const choiceRowH = 30;
+    const choiceGap = 5;
     const footerH = hasChoices
-      ? choiceN * (choiceRowH + choiceGap) + 8
-      : 30;
+      ? choiceN * (choiceRowH + choiceGap) + 6
+      : 28;
     const panelH = nameH + textH + footerH + pad;
     const slide = Math.min(1, state.anim * 4);
-    const py = designH - panelH * slide;
-    const px = 10;
-    const pw = designW - 20;
+    const pw = Math.min(Math.floor(designW * 0.68), 560);
+    const px = Math.floor((designW - pw) / 2);
+    const py = designH - 12 - panelH * slide;
 
-    const textX = 78;
+    const textX = px + 78;
     const textY = py + nameH;
-    const textW = pw - 90;
+    const textW = pw - 100;
     const footerY = py + nameH + textH;
 
     const choices = [];
     if (hasChoices) {
-      // 超过 2 个纵向排列；≤2 也纵向，避免与文字重叠
       for (let i = 0; i < choiceN; i++) {
         choices.push({
           i,
@@ -156,7 +153,6 @@ function createDialog() {
           return true;
         }
       }
-      // 点选项区外的面板仍可点，但不误触选项
       return true;
     }
     advance();

@@ -447,10 +447,16 @@ function createCultivation() {
         if (d < bestD) { bestD = d; best = e; }
       }
       if (best) {
-        const dmg = best.takeDamage((sk.damage + player.atk * 0.5) * leifaDamageBonus());
+        const dmg = best.takeDamage((sk.damage + player.atk * 0.5) * leifaDamageBonus(), {
+          interrupt: true, knockback: 10
+        });
+        const ec = best.getCenter();
+        const dx = ec.x - pc.x;
+        const dy = ec.y - pc.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        best.x += (dx / len) * 10;
+        best.y += (dy / len) * 10;
         if (particles) {
-          // 弹道感：沿线火花
-          const ec = best.getCenter();
           for (let t = 0; t < 5; t++) {
             const u = t / 4;
             particles.hitSpark(pc.x + (ec.x - pc.x) * u, pc.y + (ec.y - pc.y) * u);
