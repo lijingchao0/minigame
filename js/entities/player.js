@@ -207,6 +207,7 @@ function createPlayer(x, y) {
 
       const jawOpen = this.attackState === 'swing' ? 1 : (this.attackState === 'windup' ? 0.4 : 0);
       drawAntSprite(ctx, {
+        who: 'player',
         scale: 1.42,
         colors,
         dir: this.dir,

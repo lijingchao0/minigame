@@ -2,8 +2,10 @@
  * 敌人实体 — 饥荒式战斗（前摇→挥击命中→硬直）+ 强化像素造型
  * 无接触伤害；可贴身绕圈；可走 A 风筝
  */
-const { dist } = require('../pix.js');
+const { dist, drawBar } = require('../pix.js');
+const { P } = require('../gfx/palette.js');
 const { animFrame, drawWindupWarn } = require('./sprite.js');
+const { drawEnemyPixel } = require('../gfx/sprites/creatures.js');
 
 const ENEMY_DEFS = {
   spider: {
@@ -276,23 +278,17 @@ function createEnemy(type, x, y) {
       const c = this.getCenter();
       if (!cam.inView(c.x, c.y, 48)) return;
       const sp = cam.worldToScreen(c.x, c.y);
-      const bob = this.dead ? 0 : Math.sin(this.animT * 3) * 1.2;
       const s = def.size;
       let alpha = 1;
       let fallY = 0;
-      let rot = 0;
       if (this.dead) {
         alpha = Math.max(0, 1 - this.deadT / 1.15);
-        fallY = this.deadT * 10;
-        rot = Math.min(1.2, this.deadT * 1.8);
+        fallY = this.deadT * 8;
       }
       const shakeX = this.shake > 0 ? Math.sin(this.shake * 70) * 3 : 0;
-      const light = def.light || def.color;
-      const dark = def.dark || '#111';
       const frame = animFrame(this.animT, 6, 4);
       const windupProg = this.state === 'windup' ? 1 - this.windupT / this.windupMax : 0;
 
-      // 前摇后仰 / 挥击前扑
       let leanX = 0;
       let leanY = 0;
       if (this.state === 'windup') {
@@ -303,271 +299,39 @@ function createEnemy(type, x, y) {
         leanY = this.strikeFacing.y * 7;
       }
 
+      let pose = 'idle';
+      if (this.dead) pose = 'die';
+      else if (this.state === 'windup') pose = 'windup';
+      else if (this.state === 'strike') pose = 'attack';
+      else if (this.state === 'chase' || this.state === 'patrol') pose = 'walk';
+
       ctx.save();
       ctx.translate(sp.x + shakeX + leanX, sp.y + fallY + leanY);
-      ctx.rotate(rot);
+      ctx.imageSmoothingEnabled = false;
       ctx.globalAlpha = alpha;
 
-      // 预警环
       if (this.state === 'windup') {
         drawWindupWarn(ctx, def.attackRange, windupProg, 'rgba(231,76,60,0.9)');
-        // 抬爪/发光提示
+        // 像素蓄力提示块
+        const pr = Math.round(6 * s * (0.7 + windupProg * 0.4));
         ctx.fillStyle = `rgba(255,80,60,${0.25 + windupProg * 0.5})`;
-        ctx.beginPath();
-        ctx.arc(0, -4, 10 * s * (0.7 + windupProg * 0.4), 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(-pr, -4 - pr, pr * 2, pr * 2);
       }
 
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
-      ctx.beginPath();
-      ctx.ellipse(0, 7 * s, 9 * s, 3.2, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      if (type === 'spider') this._drawSpider(ctx, s, bob, light, dark, frame, windupProg);
-      else if (type === 'wasp') this._drawWasp(ctx, s, bob, light, dark, frame, windupProg);
-      else if (type === 'anteater') this._drawAnteater(ctx, s, bob, light, dark, frame, windupProg);
-      else if (type === 'shadow_scorpion') this._drawScorpion(ctx, s, bob, light, dark, frame, windupProg);
-      else if (type === 'heart_demon') this._drawDemon(ctx, s, bob, light, dark, frame, windupProg);
-
-      if (this.flash > 0 && !this.dead) {
-        ctx.globalAlpha = alpha * 0.55;
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(0, bob, 9 * s, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      drawEnemyPixel(ctx, type, 0, 0, {
+        pose,
+        frame,
+        flash: this.flash > 0 && !this.dead && Math.floor(this.flash * 18) % 2 === 0,
+        alpha: 1,
+        dead: this.dead,
+        drawScale: s > 1.6 ? 1.25 : (s > 1.3 ? 1.1 : 1)
+      });
 
       if (this.hp < this.maxHp && !this.dead) {
-        ctx.globalAlpha = alpha;
-        const bw = 24 * s;
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(-bw / 2, -20 * s, bw, 3.5);
-        ctx.fillStyle = '#e74c3c';
-        ctx.fillRect(-bw / 2, -20 * s, bw * (this.hp / this.maxHp), 3.5);
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
-        ctx.strokeRect(-bw / 2, -20 * s, bw, 3.5);
+        const bw = Math.round(24 * s);
+        drawBar(ctx, -bw / 2, -20 * s, bw, 4, this.hp / this.maxHp, P.hp);
       }
       ctx.restore();
-    },
-
-    _drawSpider(ctx, s, bob, light, dark, frame, wp) {
-      // 多足 + 多眼
-      ctx.strokeStyle = dark;
-      ctx.lineWidth = 1.8;
-      for (let i = 0; i < 4; i++) {
-        const sw = Math.sin(this.animT * 6 + i) * 3 + (this.state === 'windup' ? -2 - wp * 4 : 0);
-        ctx.beginPath();
-        ctx.moveTo(-3 * s, bob);
-        ctx.lineTo(-12 * s - i, bob + sw);
-        ctx.moveTo(3 * s, bob);
-        ctx.lineTo(12 * s + i, bob - sw);
-        ctx.stroke();
-      }
-      ctx.fillStyle = dark;
-      ctx.beginPath();
-      ctx.ellipse(0, 1.5 + bob, 9 * s, 7.5 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = def.color;
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 8 * s, 6.5 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = light;
-      ctx.beginPath();
-      ctx.ellipse(-1.5 * s, -2.5 * s + bob, 4 * s, 2.8 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // 前爪抬起（前摇）
-      if (this.state === 'windup' || this.state === 'strike') {
-        ctx.strokeStyle = '#2c1e14';
-        ctx.lineWidth = 2.4;
-        const lift = this.state === 'windup' ? -8 - wp * 6 : 4;
-        ctx.beginPath();
-        ctx.moveTo(-4 * s, bob - 2);
-        ctx.lineTo(-10 * s, bob + lift);
-        ctx.moveTo(4 * s, bob - 2);
-        ctx.lineTo(10 * s, bob + lift);
-        ctx.stroke();
-      }
-      // 复眼
-      ctx.fillStyle = this.flash > 0 ? '#fff' : '#e74c3c';
-      for (const ex of [-3.5, -1.2, 1.2, 3.5]) {
-        ctx.fillRect(ex * s, -3 * s + bob, 2 * s, 2 * s);
-      }
-      ctx.strokeStyle = 'rgba(8,4,2,0.7)';
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 8.4 * s, 6.9 * s, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    },
-
-    _drawWasp(ctx, s, bob, light, dark, frame) {
-      const wing = Math.sin(this.animT * 18) * 3;
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.beginPath();
-      ctx.ellipse(-7 * s, -4 * s + bob + wing, 6 * s, 3.2 * s, -0.4, 0, Math.PI * 2);
-      ctx.ellipse(7 * s, -4 * s + bob - wing, 6 * s, 3.2 * s, 0.4, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = dark;
-      ctx.beginPath();
-      ctx.ellipse(0, 1 + bob, 6 * s, 5 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#f1c40f';
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 5.4 * s, 4.4 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = light;
-      ctx.beginPath();
-      ctx.ellipse(-1 * s, -1.8 * s + bob, 3.2 * s, 2 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#2c3e50';
-      ctx.fillRect(-5.5 * s, -1.2 * s + bob, 11 * s, 2);
-      ctx.fillRect(-5.5 * s, 2 * s + bob, 11 * s, 2);
-      // 毒刺
-      ctx.fillStyle = '#2c3e50';
-      ctx.beginPath();
-      ctx.moveTo(0, 4 * s + bob);
-      ctx.lineTo(-2 * s, 9 * s + bob);
-      ctx.lineTo(2 * s, 9 * s + bob);
-      ctx.fill();
-      if (this.state === 'windup') {
-        ctx.fillStyle = 'rgba(241,196,15,0.5)';
-        ctx.beginPath();
-        ctx.arc(0, bob, 8 * s, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.strokeStyle = 'rgba(8,4,2,0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 5.7 * s, 4.7 * s, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    },
-
-    _drawAnteater(ctx, s, bob, light, dark, frame, wp) {
-      ctx.fillStyle = dark;
-      ctx.beginPath();
-      ctx.ellipse(0, 2 + bob, 14 * s, 9.5 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = def.color;
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 13 * s, 8.5 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = light;
-      ctx.beginPath();
-      ctx.ellipse(-2 * s, -3.5 * s + bob, 7.5 * s, 3.8 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // 长吻（前摇后仰再戳）
-      const snout = this.state === 'windup' ? -4 - wp * 6 : (this.state === 'strike' ? 8 : 0);
-      ctx.strokeStyle = '#6b4420';
-      ctx.lineWidth = 3.8;
-      ctx.beginPath();
-      ctx.moveTo(10 * s, bob);
-      ctx.quadraticCurveTo(18 * s + snout, 3 + bob, 24 * s + snout, bob - snout * 0.2);
-      ctx.stroke();
-      // 爪抬起
-      if (this.state === 'windup') {
-        ctx.strokeStyle = dark;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(-6 * s, 2 * s + bob);
-        ctx.lineTo(-12 * s, -8 * s - wp * 5 + bob);
-        ctx.stroke();
-      }
-      ctx.fillStyle = '#2c3e50';
-      ctx.fillRect(-4 * s, -4.5 * s + bob, 3.5 * s, 3.5 * s);
-      ctx.strokeStyle = 'rgba(8,4,2,0.65)';
-      ctx.lineWidth = 1.7;
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 13.4 * s, 8.9 * s, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    },
-
-    _drawScorpion(ctx, s, bob, light, dark, frame, wp) {
-      ctx.fillStyle = dark;
-      ctx.beginPath();
-      ctx.ellipse(0, 1.5 + bob, 9.5 * s, 7.5 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = def.color;
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 8.5 * s, 6.5 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = light;
-      ctx.beginPath();
-      ctx.ellipse(-1.2 * s, -2.5 * s + bob, 4.2 * s, 2.6 * s, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // 尾刺蓄力抬高
-      const tailLift = this.state === 'windup' ? -4 - wp * 10 : (this.state === 'strike' ? 6 : 0);
-      ctx.strokeStyle = '#9b59b6';
-      ctx.lineWidth = 2.8;
-      ctx.beginPath();
-      ctx.moveTo(-5 * s, bob);
-      ctx.quadraticCurveTo(-14 * s, -12 * s + bob + tailLift * 0.3, -5 * s, -16 * s + bob + tailLift);
-      ctx.stroke();
-      ctx.fillStyle = '#e74c3c';
-      ctx.beginPath();
-      ctx.arc(-5 * s, -16 * s + bob + tailLift, 3.8 * s, 0, Math.PI * 2);
-      ctx.fill();
-      // 钳
-      ctx.strokeStyle = light;
-      ctx.lineWidth = 2.2;
-      const claw = this.state === 'windup' ? -3 - wp * 4 : 0;
-      ctx.beginPath();
-      ctx.moveTo(5 * s, bob);
-      ctx.lineTo(12 * s, -4 * s + bob + claw);
-      ctx.lineTo(14 * s, 2 * s + bob);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(8,4,2,0.7)';
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.ellipse(0, bob, 9 * s, 7 * s, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    },
-
-    _drawDemon(ctx, s, bob, light, dark, frame, wp) {
-      const pulse = 1 + Math.sin(this.animT * 4) * 0.1 + (this.state === 'windup' ? wp * 0.15 : 0);
-      ctx.fillStyle = `rgba(142,4,67,${0.25 + Math.sin(this.animT * 3) * 0.1})`;
-      ctx.beginPath();
-      ctx.arc(0, bob, 14 * s * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = dark;
-      ctx.beginPath();
-      ctx.arc(0, 1 + bob, 11.5 * s * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = def.color;
-      ctx.beginPath();
-      ctx.arc(0, bob, 10.5 * s * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = light;
-      ctx.beginPath();
-      ctx.arc(-2 * s, -3 * s + bob, 4.2 * s, 0, Math.PI * 2);
-      ctx.fill();
-      // 空洞眼 / 受伤变 X
-      if (this.hp < this.maxHp * 0.35) {
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(-6 * s, -4 * s + bob); ctx.lineTo(-2 * s, bob);
-        ctx.moveTo(-2 * s, -4 * s + bob); ctx.lineTo(-6 * s, bob);
-        ctx.moveTo(2 * s, -4 * s + bob); ctx.lineTo(6 * s, bob);
-        ctx.moveTo(6 * s, -4 * s + bob); ctx.lineTo(2 * s, bob);
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx.beginPath();
-        ctx.arc(-4 * s, -2.5 * s + bob, 3.4 * s, 0, Math.PI * 2);
-        ctx.arc(4 * s, -2.5 * s + bob, 3.4 * s, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#ff6b9d';
-        ctx.beginPath();
-        ctx.arc(-4 * s, -2.5 * s + bob, 1.4 * s, 0, Math.PI * 2);
-        ctx.arc(4 * s, -2.5 * s + bob, 1.4 * s, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      if (this.state === 'windup') {
-        ctx.strokeStyle = `rgba(255,100,150,${0.4 + wp * 0.5})`;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(0, bob, 13 * s * pulse, 0, Math.PI * 2);
-        ctx.stroke();
-      }
     }
   };
 }

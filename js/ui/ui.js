@@ -1,10 +1,13 @@
 /**
  * UI 绘制 — HUD / 对话 / 背包 / 任务日志 / 标题 / 特效
+ * 统一 8px 网格对齐的像素面板套件
  */
-const { COLORS, drawPanel, drawButton, drawText, drawBar, roundRect, hitTest, wrapText, dist } = require('../pix.js');
+const { COLORS, P, drawPanel, drawButton, drawText, drawBar, hitTest, wrapText, dist } = require('../pix.js');
 const { drawItemIcon, ITEM_DEFS } = require('../entities/item.js');
 const { SKILLS } = require('../systems/cultivation.js');
 const { SHOP_STOCK } = require('../systems/economy.js');
+const { drawIcon } = require('../gfx/sprites/ui_icons.js');
+const { drawAntPixel } = require('../gfx/sprites/ants.js');
 
 /** 全局 HUD 缩放（横屏紧凑） */
 const HUD_SCALE = 0.72;
@@ -47,58 +50,51 @@ function createUI(screen) {
     ui.breakFx = { text, t: 0 };
   }
 
-  // —— 标题画面（横屏） ——
+  // —— 标题画面（横屏像素风） ——
   function drawTitle(ctx, hasSave, settings) {
     const w = screen.designW;
     const h = screen.designH;
+    // 暖色渐变背景（调色板木色/苔绿）
     const g = ctx.createLinearGradient(0, 0, w, h);
-    g.addColorStop(0, '#1a3a1a');
-    g.addColorStop(0.45, '#2d5a28');
-    g.addColorStop(1, '#0f1f12');
+    g.addColorStop(0, P.mossDk);
+    g.addColorStop(0.4, P.moss);
+    g.addColorStop(1, P.woodDk);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
 
-    // 底部草影
-    ctx.fillStyle = '#143018';
-    for (let i = 0; i < 36; i++) {
-      const x = i * 28;
-      ctx.beginPath();
-      ctx.moveTo(x, h);
-      ctx.quadraticCurveTo(x + 10, h - 28 - (i % 5) * 6, x + 20, h);
-      ctx.fill();
+    // 像素草丛底边
+    ctx.fillStyle = P.ink;
+    for (let i = 0; i < 50; i++) {
+      const x = i * 18;
+      const hh = 10 + (i % 5) * 4;
+      ctx.fillRect(x, h - hh, 3, hh);
+      ctx.fillRect(x + 4, h - hh - 4, 2, hh + 4);
     }
 
-    // 左侧蚂蚁剪影
+    // 左侧像素蚂蚁（预渲染）
     ctx.save();
-    ctx.translate(w * 0.28, h * 0.48);
-    ctx.scale(1.15, 1.15);
-    ctx.fillStyle = '#1a1008';
-    ctx.beginPath(); ctx.ellipse(0, 12, 20, 15, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(0, -4, 15, 13, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(0, -22, 17, 15, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#d4a017';
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(-6, -28); ctx.quadraticCurveTo(-18, -46, -10, -52);
-    ctx.moveTo(6, -28); ctx.quadraticCurveTo(18, -46, 10, -52);
-    ctx.stroke();
-    ctx.fillStyle = '#d4a017';
-    ctx.beginPath(); ctx.arc(-10, -52, 3.2, 0, Math.PI * 2); ctx.arc(10, -52, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.translate(Math.round(w * 0.26), Math.round(h * 0.55));
+    ctx.imageSmoothingEnabled = false;
+    drawAntPixel(ctx, 0, 0, {
+      who: 'player', dir: 'down', pose: 'idle',
+      frame: Math.floor(Date.now() / 400) % 2,
+      drawScale: 2.2
+    });
     ctx.restore();
 
-    // 右侧标题与按钮
-    const tx = w * 0.62;
-    drawText(ctx, '蚂蚁修仙', tx, h * 0.22, {
-      align: 'center', font: 'bold 40px "PingFang SC","KaiTi",serif', color: '#f5e6c8', shadow: true
+    // 右侧标题与按钮（8px 对齐）
+    const tx = Math.round(w * 0.64);
+    drawText(ctx, '蚂蚁修仙', tx, Math.round(h * 0.16), {
+      align: 'center', font: 'bold 42px "PingFang SC","KaiTi",serif', color: P.ivory, shadow: true
     });
-    drawText(ctx, 'v2.4 · 横屏修仙 · 饥荒式战斗', tx, h * 0.22 + 44, {
-      align: 'center', font: '13px "PingFang SC",sans-serif', color: COLORS.gold
+    drawText(ctx, 'v2.5 · 像素重制 · 饥荒式战斗', tx, Math.round(h * 0.16) + 48, {
+      align: 'center', font: '13px "PingFang SC",sans-serif', color: P.gold
     });
 
-    const bw = 170;
+    const bw = 176;
     const bh = 36;
     const bx = tx - bw / 2;
-    let by = h * 0.42;
+    let by = Math.round(h * 0.40);
     drawButton(ctx, bx, by, bw, bh, '开始旅程');
     ui._titleBtns = [{ id: 'new', x: bx, y: by, w: bw, h: bh }];
     by += 44;
@@ -124,74 +120,72 @@ function createUI(screen) {
     return null;
   }
 
-  // —— 主 HUD（横屏） ——
+  // —— 主 HUD（横屏 · 8px 网格） ——
   function drawHUD(ctx, game) {
     const w = screen.designW;
     const h = screen.designH;
     const p = game.player;
     const cul = game.cultivation;
     const S = HUD_SCALE;
-    const padL = Math.max(6, (screen.safeLeft || 0) * 0.3);
+    const padL = Math.max(8, Math.round((screen.safeLeft || 0) * 0.3 / 8) * 8);
 
-    // 左上状态（紧凑横条）
-    const lpW = 168;
-    const lpH = 54;
-    drawPanel(ctx, padL, 6, lpW, lpH, { radius: 6 });
-    ctx.fillStyle = '#4a3420';
-    ctx.beginPath();
-    ctx.arc(padL + 18, 28, 11, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#e8bc3a';
-    ctx.beginPath();
-    ctx.arc(padL + 18, 24, 4.2, 0, Math.PI * 2);
-    ctx.fill();
+    // 左上状态区：头像框 + 境界牌 + 三条
+    const lpW = 176;
+    const lpH = 56;
+    drawPanel(ctx, padL, 8, lpW, lpH, { gold: true });
+    // 头像框
+    ctx.fillStyle = P.woodDk;
+    ctx.fillRect(padL + 8, 16, 28, 28);
+    ctx.fillStyle = P.gold;
+    ctx.fillRect(padL + 8, 16, 28, 2);
+    ctx.fillRect(padL + 8, 42, 28, 2);
+    ctx.fillRect(padL + 8, 16, 2, 28);
+    ctx.fillRect(padL + 34, 16, 2, 28);
+    drawIcon(ctx, 'avatar', padL + 22, 30, { scale: 0.85 });
 
-    drawText(ctx, cul.realmName(), padL + 34, 8, { font: 'bold 11px sans-serif', color: COLORS.gold });
-    drawText(ctx, cul.rootsLabel(), padL + 34, 21, { font: '8px sans-serif', color: COLORS.textDim });
-    drawBar(ctx, padL + 34, 34, lpW - 44, 5, p.hp / p.maxHp, COLORS.hp);
-    drawBar(ctx, padL + 34, 41, lpW - 44, 5, p.mp / p.maxMp, COLORS.mp);
-    drawBar(ctx, padL + 34, 48, lpW - 44, 4, cul.state.xp / cul.xpNeeded(), COLORS.xp);
-    ui._hudLeft = { x: padL, y: 6, w: lpW, h: lpH };
+    drawText(ctx, cul.realmName(), padL + 42, 12, { font: 'bold 11px sans-serif', color: P.gold });
+    drawText(ctx, cul.rootsLabel(), padL + 42, 24, { font: '8px sans-serif', color: COLORS.textDim });
+    drawBar(ctx, padL + 42, 36, lpW - 54, 5, p.hp / p.maxHp, COLORS.hp);
+    drawBar(ctx, padL + 42, 43, lpW - 54, 5, p.mp / p.maxMp, COLORS.mp);
+    drawBar(ctx, padL + 42, 50, lpW - 54, 4, cul.state.xp / cul.xpNeeded(), COLORS.xp);
+    ui._hudLeft = { x: padL, y: 8, w: lpW, h: lpH };
 
-    // 右上：倍速 | 资源 | 小地图（分区）
+    // 右上：倍速 | 资源 | 小地图
     const mmW = 88;
     const mmH = 64;
-    const mmX = w - mmW - 6;
-    drawMinimap(ctx, game, mmX, 6, mmW, mmH);
+    const mmX = w - mmW - 8;
+    drawMinimap(ctx, game, mmX, 8, mmW, mmH);
 
-    const rpW = 108;
-    const rpX = mmX - rpW - 6;
-    drawPanel(ctx, rpX, 6, rpW, 40, { radius: 6 });
-    drawText(ctx, '金 ' + game.inventory.state.gold, rpX + 8, 10, { font: '10px sans-serif' });
-    drawText(ctx, game.daycycle.timeLabel(), rpX + 8, 22, { font: '9px sans-serif', color: COLORS.textDim });
-    drawText(ctx, '繁 ' + game.kingdom.state.prosperity, rpX + 8, 32, { font: '9px sans-serif', color: '#e67e22' });
+    const rpW = 112;
+    const rpX = mmX - rpW - 8;
+    drawPanel(ctx, rpX, 8, rpW, 40, { gold: false });
+    drawIcon(ctx, 'gold', rpX + 14, 18, { scale: 0.7 });
+    drawText(ctx, '' + game.inventory.state.gold, rpX + 24, 12, { font: '10px sans-serif' });
+    drawIcon(ctx, 'time', rpX + 14, 32, { scale: 0.65 });
+    drawText(ctx, game.daycycle.timeLabel(), rpX + 24, 26, { font: '9px sans-serif', color: COLORS.textDim });
+    drawText(ctx, '繁 ' + game.kingdom.state.prosperity, rpX + 70, 26, { font: '9px sans-serif', color: P.soilLt });
 
     const spLabel = game.daycycle.speedLabel();
-    drawButton(ctx, rpX - 42, 6, 38, 28, spLabel, { font: 'bold 11px sans-serif' });
-    ui._speedBtn = { x: rpX - 42, y: 6, w: 38, h: 28 };
-    ui._hudRight = { x: rpX - 42, y: 6, w: rpW + mmW + 54, h: mmH };
-    ui._minimapHit = { x: mmX, y: 6, w: mmW, h: mmH };
+    drawButton(ctx, rpX - 44, 8, 40, 32, spLabel, { font: 'bold 11px sans-serif' });
+    ui._speedBtn = { x: rpX - 44, y: 8, w: 40, h: 32 };
+    ui._hudRight = { x: rpX - 44, y: 8, w: rpW + mmW + 56, h: mmH };
+    ui._minimapHit = { x: mmX, y: 8, w: mmW, h: mmH };
 
-    // 任务简讯（左上状态下方）
     drawQuestBrief(ctx, game, w);
-
     drawQuestGuide(ctx, game, w, h);
-
-    // 右下：技能+攻击区（右手拇指）
     drawHotbar(ctx, game, w, h);
 
-    // 功能按钮：技能区左侧竖排
-    const btnW = Math.round(36 * S);
-    const btnH = Math.round(30 * S);
-    const gap = btnH + 6;
+    // 左下功能键（图标+字）
+    const btnW = Math.round(40 * S / 8) * 8;
+    const btnH = Math.round(32 * S / 8) * 8 || 24;
+    const gap = btnH + 8;
     const funcs = [
-      { id: 'bag', label: '包' },
-      { id: 'quest', label: '志' },
-      { id: 'meditate', label: '修' },
-      { id: 'menu', label: '菜' }
+      { id: 'bag', label: '包', icon: 'bag' },
+      { id: 'quest', label: '志', icon: 'quest' },
+      { id: 'meditate', label: '修', icon: 'meditate' },
+      { id: 'menu', label: '菜', icon: 'settings' }
     ];
     ui._funcBtns = [];
-    // 放在热键区左侧
     const hot = ui._hotbarBox;
     let fbx = w - 200;
     let fy = h - 16 - funcs.length * gap;
@@ -202,13 +196,14 @@ function createUI(screen) {
     for (let i = 0; i < funcs.length; i++) {
       const f = funcs[i];
       const by = fy + i * gap;
-      drawButton(ctx, fbx, by, btnW, btnH, f.label, { font: 'bold 12px sans-serif' });
+      drawButton(ctx, fbx, by, btnW, btnH, '', { font: 'bold 10px sans-serif' });
+      drawIcon(ctx, f.icon, fbx + btnW / 2, by + btnH / 2 - 1, { scale: 0.75 });
       ui._funcBtns.push({ id: f.id, x: fbx, y: by, w: btnW, h: btnH });
     }
 
     if (game._interactHint) {
       drawText(ctx, game._interactHint, w / 2, h - 28, {
-        align: 'center', font: '12px sans-serif', color: '#f1c40f', shadow: true
+        align: 'center', font: '12px sans-serif', color: P.gold, shadow: true
       });
     }
 
@@ -218,9 +213,9 @@ function createUI(screen) {
       const a = b.t < 0.3 ? b.t / 0.3 : b.t > b.life - 0.4 ? (b.life - b.t) / 0.4 : 1;
       ctx.save();
       ctx.globalAlpha = a;
-      drawPanel(ctx, w / 2 - 130, 8 + i * 30, 260, 26, { gold: true, radius: 6 });
-      drawText(ctx, b.text, w / 2, 13 + i * 30, {
-        align: 'center', font: 'bold 12px sans-serif', color: COLORS.gold
+      drawPanel(ctx, w / 2 - 130, 8 + i * 32, 260, 28, { gold: true });
+      drawText(ctx, b.text, w / 2, 14 + i * 32, {
+        align: 'center', font: 'bold 12px sans-serif', color: P.gold
       });
       ctx.restore();
     }
@@ -228,7 +223,7 @@ function createUI(screen) {
     if (ui.toast) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, ui.toastT);
-      drawPanel(ctx, w / 2 - 110, h / 2 - 18, 220, 36, { radius: 8 });
+      drawPanel(ctx, w / 2 - 112, h / 2 - 20, 224, 40, {});
       drawText(ctx, ui.toast, w / 2, h / 2 - 6, {
         align: 'center', font: '13px sans-serif'
       });
@@ -240,11 +235,11 @@ function createUI(screen) {
       const a = t < 0.3 ? t / 0.3 : t > 2 ? (2.5 - t) / 0.5 : 1;
       ctx.save();
       ctx.globalAlpha = a * 0.85;
-      ctx.fillStyle = '#000';
+      ctx.fillStyle = P.ink;
       ctx.fillRect(0, 0, w, h);
       ctx.globalAlpha = a;
       drawText(ctx, '境 界 突 破', w / 2, h / 2 - 30, {
-        align: 'center', font: 'bold 28px "PingFang SC",serif', color: COLORS.gold
+        align: 'center', font: 'bold 28px "PingFang SC",serif', color: P.gold
       });
       drawText(ctx, ui.breakFx.text, w / 2, h / 2 + 10, {
         align: 'center', font: '16px sans-serif', color: COLORS.text
@@ -276,20 +271,18 @@ function createUI(screen) {
     ui._hotbtns = [];
     ui._hotbarBox = null;
 
-    // 横屏：右下角技能+攻击区（始终保留可点区域，半透明）
     const skills = game.cultivation.state.learned;
     const slotN = 1 + Math.min(4, Math.max(skills.length, 2));
-    const R = 17;
-    const gap = 7;
-    const barW = slotN * (R * 2 + gap) + 14;
-    const barH = 46;
-    const barX = w - barW - 10;
+    const R = 18;
+    const gap = 8;
+    const barW = slotN * (R * 2 + gap) + 16;
+    const barH = 48;
+    const barX = w - barW - 8;
     const barY = h - barH - 8;
     const cy = barY + barH / 2;
     ui._hotbarBox = { x: barX, y: barY, w: barW, h: barH };
 
     if (ui.hotbarAlpha < 0.08) {
-      // 仍注册攻击键便于教程高亮
       ui._hotbtns.push({ id: 'attack', x: barX + 8, y: barY + 6, w: R * 2, h: R * 2 });
       return;
     }
@@ -297,63 +290,54 @@ function createUI(screen) {
     ctx.save();
     ctx.globalAlpha = ui.hotbarAlpha;
     drawPanel(ctx, barX, barY, barW, barH, {
-      radius: 12,
-      fill: wantShow ? 'rgba(48,42,36,0.82)' : 'rgba(48,42,36,0.48)'
+      fill: wantShow ? 'rgba(42,30,20,0.88)' : 'rgba(42,30,20,0.5)'
     });
 
-    function drawSkillCircle(cx, cy, label, opts) {
+    function drawSkillSlot(cx, cy, iconName, opts) {
       opts = opts || {};
       const disabled = opts.disabled;
       const cd = opts.cd || 0;
       const cdMax = opts.cdMax || 1;
       const noMp = opts.noMp;
-      ctx.beginPath();
-      ctx.arc(cx, cy, R, 0, Math.PI * 2);
-      ctx.fillStyle = disabled || noMp ? '#3a3228' : '#6b4a28';
-      ctx.fill();
-      ctx.strokeStyle = disabled ? '#4a4030' : COLORS.gold;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      if (!disabled && !noMp) {
-        ctx.fillStyle = 'rgba(255,220,150,0.18)';
-        ctx.beginPath();
-        ctx.arc(cx, cy - 4, R * 0.55, Math.PI, 0);
-        ctx.fill();
-      }
-      drawText(ctx, label, cx, cy - 5, {
-        align: 'center', font: 'bold 10px sans-serif',
-        color: disabled || noMp ? '#776655' : COLORS.text
-      });
+      ctx.imageSmoothingEnabled = false;
+      // 像素圆键：切角方块
+      const s = R;
+      ctx.fillStyle = disabled || noMp ? P.shade : P.woodMd;
+      ctx.fillRect(cx - s + 2, cy - s, s * 2 - 4, s * 2);
+      ctx.fillRect(cx - s, cy - s + 2, s * 2, s * 2 - 4);
+      ctx.fillStyle = disabled ? P.shadow : P.gold;
+      ctx.fillRect(cx - s + 2, cy - s, s * 2 - 4, 2);
+      ctx.fillRect(cx - s + 2, cy + s - 2, s * 2 - 4, 2);
+      ctx.fillRect(cx - s, cy - s + 2, 2, s * 2 - 4);
+      ctx.fillRect(cx + s - 2, cy - s + 2, 2, s * 2 - 4);
+      if (iconName) drawIcon(ctx, iconName, cx, cy - 1, { scale: 0.7, alpha: disabled ? 0.4 : 1 });
       if (cd > 0 && cdMax > 0) {
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + (cd / cdMax) * Math.PI * 2);
-        ctx.closePath();
-        ctx.fill();
+        const frac = cd / cdMax;
+        ctx.fillRect(cx - s + 2, cy - s + 2, s * 2 - 4, Math.floor((s * 2 - 4) * frac));
         drawText(ctx, Math.ceil(cd) + '', cx, cy - 5, {
-          align: 'center', font: 'bold 11px sans-serif', color: '#fff'
+          align: 'center', font: 'bold 11px sans-serif', color: P.ivory
         });
       }
       if (noMp && !disabled) {
-        drawText(ctx, '灵', cx, cy + 8, {
-          align: 'center', font: '8px sans-serif', color: '#5dade2'
+        drawText(ctx, '灵', cx, cy + 10, {
+          align: 'center', font: '8px sans-serif', color: P.mpLt
         });
       }
     }
 
     const ax = barX + 10 + R;
-    drawSkillCircle(ax, cy, '攻', {});
+    drawSkillSlot(ax, cy, 'attack', {});
     ui._hotbtns.push({ id: 'attack', x: ax - R, y: cy - R, w: R * 2, h: R * 2 });
 
-    const SKILL_SHORT = { lingbu: '步', jiaqiao: '甲', tusi: '丝', leifa: '雷' };
+    const SKILL_ICON = { lingbu: 'lingbu', jiaqiao: 'jiaqiao', tusi: 'tusi', leifa: 'leifa' };
     for (let i = 0; i < Math.min(4, slotN - 1); i++) {
       const sx = barX + 10 + (i + 1) * (R * 2 + gap) + R;
       const sk = SKILLS.find((s) => s.id === skills[i]);
-      const label = sk ? (SKILL_SHORT[sk.id] || sk.name.slice(0, 1)) : '—';
+      const icon = sk ? SKILL_ICON[sk.id] : null;
       const cd = sk ? (game.cultivation.state.skillCd[sk.id] || 0) : 0;
       const noMp = sk && game.player.mp < sk.mpCost;
-      drawSkillCircle(sx, cy, label, {
+      drawSkillSlot(sx, cy, icon, {
         disabled: !sk,
         cd,
         cdMax: sk ? sk.cd : 1,
@@ -370,23 +354,24 @@ function createUI(screen) {
   function drawQuestBrief(ctx, game, w) {
     ui._questBriefHit = null;
     const track = game.quests.trackingInfo(game);
-    const bx = 6;
-    const by = 64;
-    const bw = Math.min(280, w * 0.38);
+    const bx = 8;
+    const by = 72;
+    const bw = Math.min(280, Math.floor(w * 0.38 / 8) * 8);
     if (!track) {
-      drawPanel(ctx, bx, by, bw, 26, { radius: 5, fill: 'rgba(48,42,36,0.75)' });
-      drawText(ctx, '无事可做，沿主线指引推进', bx + 8, by + 7, {
+      drawPanel(ctx, bx, by, bw, 24, { fill: 'rgba(42,30,20,0.78)' });
+      drawText(ctx, '无事可做，沿主线指引推进', bx + 8, by + 6, {
         font: '10px sans-serif', color: COLORS.textDim
       });
-      ui._questBriefHit = { x: bx, y: by, w: bw, h: 26 };
+      ui._questBriefHit = { x: bx, y: by, w: bw, h: 24 };
       return;
     }
     const lines = track.brief || ('[' + track.kind + '] ' + track.name + ' · ' + track.stepText);
-    drawPanel(ctx, bx, by, bw, 32, { radius: 5, fill: 'rgba(48,42,36,0.82)', borderColor: COLORS.gold });
-    drawText(ctx, lines.length > 28 ? lines.slice(0, 28) + '…' : lines, bx + 8, by + 5, {
-      font: 'bold 10px sans-serif', color: COLORS.gold
+    drawPanel(ctx, bx, by, bw, 32, { fill: 'rgba(42,30,20,0.85)', borderColor: P.gold, gold: true });
+    drawIcon(ctx, 'quest', bx + 14, by + 16, { scale: 0.55 });
+    drawText(ctx, lines.length > 26 ? lines.slice(0, 26) + '…' : lines, bx + 26, by + 5, {
+      font: 'bold 10px sans-serif', color: P.gold
     });
-    drawText(ctx, track.stepText, bx + 8, by + 18, {
+    drawText(ctx, track.stepText, bx + 26, by + 18, {
       font: '9px sans-serif', color: COLORS.text
     });
     ui._questBriefHit = { x: bx, y: by, w: bw, h: 32 };
@@ -499,32 +484,37 @@ function createUI(screen) {
     const st = dialog.state;
     const L = dialog.layout(screen.designW, screen.designH);
 
-    drawPanel(ctx, L.px, L.py, L.pw, L.panelH - 4, { gold: true, radius: 10 });
+    drawPanel(ctx, L.px, L.py, L.pw, L.panelH - 4, { gold: true });
 
-    // 立绘圆
-    ctx.fillStyle = st.color;
-    ctx.beginPath();
-    ctx.arc(L.px + 38, L.py + 42, 24, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath();
-    ctx.arc(L.px + 38, L.py + 42, 16, 0, Math.PI * 2);
-    ctx.fill();
+    // 立绘位（像素框）
+    ctx.fillStyle = P.woodDk;
+    ctx.fillRect(L.px + 12, L.py + 16, 52, 52);
+    ctx.fillStyle = st.color || P.woodMd;
+    ctx.fillRect(L.px + 16, L.py + 20, 44, 44);
+    ctx.fillStyle = P.gold;
+    ctx.fillRect(L.px + 12, L.py + 16, 52, 2);
+    ctx.fillRect(L.px + 12, L.py + 66, 52, 2);
+    ctx.fillRect(L.px + 12, L.py + 16, 2, 52);
+    ctx.fillRect(L.px + 62, L.py + 16, 2, 52);
+    // 简易立绘剪影
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(L.px + 32, L.py + 48, 12, 10);
+    ctx.fillRect(L.px + 34, L.py + 36, 8, 12);
+    ctx.fillRect(L.px + 35, L.py + 28, 6, 8);
 
     // 名字牌
-    drawPanel(ctx, L.px + 70, L.py + 8, 130, 20, {
-      radius: 4, fill: 'rgba(0,0,0,0.35)', borderColor: COLORS.gold
+    drawPanel(ctx, L.px + 72, L.py + 10, 136, 22, {
+      fill: 'rgba(0,0,0,0.4)', borderColor: P.gold
     });
-    drawText(ctx, st.speaker, L.px + 78, L.py + 11, {
-      font: 'bold 11px sans-serif', color: COLORS.gold
+    drawText(ctx, st.speaker, L.px + 80, L.py + 14, {
+      font: 'bold 11px sans-serif', color: P.gold
     });
     if (st.role) {
-      drawText(ctx, st.role, L.px + 206, L.py + 12, {
+      drawText(ctx, st.role, L.px + 214, L.py + 14, {
         font: '10px sans-serif', color: COLORS.textDim
       });
     }
 
-    // 文本区（安全区，不侵入底部按键）
     ctx.save();
     ctx.beginPath();
     ctx.rect(L.textX - 2, L.textY, L.textW + 4, L.textH - 4);
@@ -539,7 +529,6 @@ function createUI(screen) {
     }
     ctx.restore();
 
-    // 选项区 / 下一页按键（固定下部）
     if (L.hasChoices) {
       for (let i = 0; i < L.choices.length; i++) {
         const c = L.choices[i];
@@ -551,7 +540,7 @@ function createUI(screen) {
         { font: 'bold 11px sans-serif' });
     } else if (!st.full && L.nextBtn) {
       drawText(ctx, '…', L.nextBtn.x + L.nextBtn.w / 2, L.nextBtn.y + 6, {
-        align: 'center', font: '12px sans-serif', color: COLORS.gold
+        align: 'center', font: '12px sans-serif', color: P.gold
       });
     }
   }

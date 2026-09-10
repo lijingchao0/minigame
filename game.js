@@ -1,5 +1,5 @@
 /**
- * 《蚂蚁修仙》v2.4 — 游戏入口（横屏 + 饥荒式战斗）
+ * 《蚂蚁修仙》v2.5 — 游戏入口（横屏 + 像素点阵美术 + 饥荒式战斗）
  * 微信小游戏：优先 GameGlobal.canvas / 全局 canvas / wx.createCanvas()
  */
 const { TILE, clamp, dist, hitTest } = require('./js/pix.js');
@@ -113,6 +113,10 @@ function createScreen(cvs) {
       ctx.save();
       ctx.translate(offsetX, offsetY);
       ctx.scale(scale, scale);
+      // 全局关闭插值，保证像素硬边
+      ctx.imageSmoothingEnabled = false;
+      if (ctx.mozImageSmoothingEnabled != null) ctx.mozImageSmoothingEnabled = false;
+      if (ctx.webkitImageSmoothingEnabled != null) ctx.webkitImageSmoothingEnabled = false;
       ctx.beginPath();
       ctx.rect(0, 0, designW, designH);
       ctx.clip();

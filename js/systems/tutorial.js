@@ -1,7 +1,7 @@
 /**
  * 新手教程 — 分步 overlay 引导（可跳过，进度存档）
  */
-const { TILE, hitTest, drawPanel, drawButton, drawText, COLORS, roundRect } = require('../pix.js');
+const { TILE, hitTest, drawPanel, drawButton, drawText, COLORS, P, roundRect } = require('../pix.js');
 
 const STEPS = [
   {
@@ -231,19 +231,19 @@ function createTutorial() {
       ctx.fillRect(0, hy + hh, w, Math.max(0, h - hy - hh));
       ctx.fillRect(0, hy, Math.max(0, hx), hh);
       ctx.fillRect(hx + hw, hy, Math.max(0, w - hx - hw), hh);
-      // 光圈
-      const pulse = 2 + Math.sin(time * 4) * 1.5;
-      ctx.strokeStyle = 'rgba(241,196,15,0.95)';
-      ctx.lineWidth = 2.5;
-      roundRect(ctx, hx - pulse, hy - pulse, hw + pulse * 2, hh + pulse * 2, 10);
+      // 像素高亮框
+      const pulse = Math.round(2 + Math.sin(time * 4) * 1.5);
+      ctx.strokeStyle = P.gold;
+      ctx.lineWidth = 2;
+      roundRect(ctx, hx - pulse, hy - pulse, hw + pulse * 2, hh + pulse * 2, 2);
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(241,196,15,0.35)';
-      ctx.lineWidth = 6;
-      roundRect(ctx, hx - pulse - 3, hy - pulse - 3, hw + pulse * 2 + 6, hh + pulse * 2 + 6, 12);
+      ctx.strokeStyle = 'rgba(212,160,40,0.35)';
+      ctx.lineWidth = 4;
+      roundRect(ctx, hx - pulse - 2, hy - pulse - 2, hw + pulse * 2 + 4, hh + pulse * 2 + 4, 2);
       ctx.stroke();
     } else {
       ctx.fillRect(0, 0, w, h);
-      // 世界目标光圈（移动标记 / 采集 / NPC）
+      // 世界目标像素光圈
       if (game.camera) {
         let wx = null;
         let wy = null;
@@ -259,37 +259,34 @@ function createTutorial() {
         }
         if (wx != null) {
           const sp = game.camera.worldToScreen(wx, wy);
-          const r = 16 + Math.sin(time * 4) * 3;
-          ctx.strokeStyle = 'rgba(241,196,15,0.95)';
-          ctx.lineWidth = 2.5;
-          ctx.beginPath();
-          ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+          const r = Math.round(14 + Math.sin(time * 4) * 3);
+          ctx.fillStyle = 'rgba(212,160,40,0.2)';
+          ctx.fillRect(Math.round(sp.x - r), Math.round(sp.y - r), r * 2, r * 2);
+          ctx.strokeStyle = P.gold;
+          ctx.lineWidth = 2;
+          roundRect(ctx, Math.round(sp.x - r), Math.round(sp.y - r), r * 2, r * 2, 2);
           ctx.stroke();
-          ctx.fillStyle = 'rgba(241,196,15,0.2)';
-          ctx.beginPath();
-          ctx.arc(sp.x, sp.y, r * 0.6, 0, Math.PI * 2);
-          ctx.fill();
         }
       }
     }
 
-    // 说明面板（横屏：居中偏下，宽度约 70%）
-    const pw = Math.min(Math.floor(w * 0.7), 520);
-    const ph = 100;
-    const px = Math.floor((w - pw) / 2);
-    const py = h - ph - 10;
-    drawPanel(ctx, px, py, pw, ph, { gold: true, radius: 10 });
+    // 说明面板（像素九宫格）
+    const pw = Math.min(Math.floor(w * 0.7 / 8) * 8, 520);
+    const ph = 104;
+    const px = Math.floor((w - pw) / 2 / 8) * 8;
+    const py = h - ph - 8;
+    drawPanel(ctx, px, py, pw, ph, { gold: true });
     drawText(ctx, '教程 ' + (state.step + 1) + '/' + STEPS.length + ' · ' + cur.title, px + 14, py + 10, {
-      font: 'bold 13px sans-serif', color: COLORS.gold
+      font: 'bold 13px sans-serif', color: P.gold
     });
     drawText(ctx, cur.text, px + 14, py + 32, {
       font: '12px "PingFang SC",sans-serif', color: COLORS.text
     });
 
-    drawButton(ctx, px + 14, py + ph - 36, 90, 28, '跳过教程', { font: 'bold 11px sans-serif' });
-    uiHit.skip = { x: px + 14, y: py + ph - 36, w: 90, h: 28 };
-    drawButton(ctx, px + pw - 104, py + ph - 36, 90, 28, '下一步', { font: 'bold 11px sans-serif' });
-    uiHit.next = { x: px + pw - 104, y: py + ph - 36, w: 90, h: 28 };
+    drawButton(ctx, px + 14, py + ph - 36, 96, 28, '跳过教程', { font: 'bold 11px sans-serif' });
+    uiHit.skip = { x: px + 14, y: py + ph - 36, w: 96, h: 28 };
+    drawButton(ctx, px + pw - 110, py + ph - 36, 96, 28, '下一步', { font: 'bold 11px sans-serif' });
+    uiHit.next = { x: px + pw - 110, y: py + ph - 36, w: 96, h: 28 };
     ctx.restore();
   }
 
@@ -309,24 +306,22 @@ function createTutorial() {
     return false;
   }
 
-  /** 绘制世界移动目标（在世界层） */
+  /** 绘制世界移动目标（像素框） */
   function drawWorldMarker(ctx, game) {
     if (!state.active || !state.marker || !game.camera) return;
     const cur = current();
     if (!cur || cur.highlight !== 'world_marker') return;
     const sp = game.camera.worldToScreen(state.marker.x, state.marker.y);
     const t = game.time || 0;
-    const r = 12 + Math.sin(t * 5) * 2;
+    const r = Math.round(12 + Math.sin(t * 5) * 2);
     ctx.save();
-    ctx.strokeStyle = 'rgba(241,196,15,0.9)';
+    ctx.imageSmoothingEnabled = false;
+    ctx.strokeStyle = P.gold;
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+    roundRect(ctx, Math.round(sp.x - r), Math.round(sp.y - r), r * 2, r * 2, 2);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(241,196,15,0.25)';
-    ctx.beginPath();
-    ctx.arc(sp.x, sp.y, r * 0.5, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillStyle = 'rgba(212,160,40,0.25)';
+    ctx.fillRect(Math.round(sp.x - r * 0.5), Math.round(sp.y - r * 0.5), r, r);
     ctx.restore();
   }
 
